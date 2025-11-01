@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relax Support (Web)</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:820px;margin:20px auto;padding:0 12px}
+  .card{border:1px solid #ddd;border-radius:14px;padding:16px;margin:14px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #aaa;background:#fafafa;cursor:pointer}
+  code{background:#f5f5f5;padding:2px 6px;border-radius:6px}
+  .ok{color:#0a7c2e;font-weight:700}.bad{color:#b20000;font-weight:700}.muted{color:#666}
+  input,textarea{width:100%;padding:8px;border:1px solid #bbb;border-radius:10px}
+</style>
+</head>
+<body>
+<h1>Relax Support – Web</h1>
+
+<div class="card">
+  <h2>状態</h2>
+  <p>BLE: <span id="bleState">未接続</span>／Spotify: <span id="spState">未ログイン</span></p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button id="btnBle">心拍センサー接続（COOSPO）</button>
+    <button id="btnSp">Spotifyログイン</button>
+    <button id="btnStart">セッション開始</button>
+    <button id="btnStop" disabled>セッション終了</button>
+  </div>
+  <p class="muted">※ Spotifyは「再生中のデバイス」があるときだけ制御します（勝手に音は鳴りません）。</p>
+</div>
+
+<div class="card">
+  <h2>ログ</h2>
+  <pre id="log" style="white-space:pre-wrap;height:160px;overflow:auto;background:#fafafa;padding:8px;border-radius:8px"></pre>
+  <button id="btnCsv" disabled>CSVダウンロード</button>
+</div>
+
+<div class="card">
+  <h2>就寝前アンケート</h2>
+  <label>いまの気分（0〜10）</label><input type="number" id="mood" min="0" max="10"/>
+  <label>リラックス度（0〜10）</label><input type="number" id="relax" min="0" max="10"/>
+  <label>メモ（任意）</label><textarea id="notes" rows="2" placeholder="寝つき・出来事など"></textarea>
+  <button id="btnNote">追加</button>
+</div>
+
+<script>
+// ====== 設定 ↓ 必要に応じて書き換え ======
+const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e"; // ←置き換え
+const REDIRECT_URI = "http://127.0.0.1:8000/index.html"; // 同ページに戻す
+const SCOPES = [
+  "user-read-playback-state","user-modify-playback-state",
+  "playlist-read-private","playlist-read-collaborative","streaming"
+].join(" ");
+const SWITCHBOT_PROXY = "https://YOUR-WORKER.example.workers.dev/switchbot"; // 後述のWorkers URL
+
+// 友人からもらったプレイリスト（例）
+const PLAYLIST_TENSION_TO_CALM = "spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";   // 緊張→鎮静
+const PLAYLIST_DEPRESS_TO_LIFT = "spotify:playlist:0TFRed2ZNnofW4uGxjytvT";   // 落ち込み→リフトアップ
+const PLAYLIST_CALM_MAINTAIN   = "spotify:playlist:2m9HoHfpO0tk5eky1fopVu";   // 分類不能＝鎮静維持
+// ====== 設定 ↑ ======
+
+const logEl = document.getElementById("log");
+const bleStateEl = document.getElementById("bleState");
+const spStateEl  = document.getElementById("spState");
+const btnCsv = document.getElementById("btnCsv");
+let hr = null, rrList = []; // RR(秒)の履歴
+let timer = null;
+let sessionId = Math.random().toString(36).slice(2,10);
+let spotifyAccessToken = null;
+let csvRows = [["timestamp","datetime","session_id","hr","rmssd","emotion","note"]];
+
+function log(s){logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight;}
+function isoNow(){return new Date().toISOString().replace("T"," ").slice(0,19);}
+
+// ---- HRV: RMSSD計算（RRは秒単位）
+function calcRMSSD(rrs){
+  if(rrs.length < 3) return null;
+  let sum = 0, n = 0;
+  for(let i=1;i<rrs.length;i++){
+    const diff = (rrs[i]-rrs[i-1]);
+    sum += diff*diff; n++;
+  }
+  return Math.sqrt(sum/n);
+}
+
+// ============ Web Bluetooth (Heart Rate 0x180D) ============
+async function connectBLE(){
+  try{
+    log("BLE: デバイス選択...");
+    const dev = await navigator.bluetooth.requestDevice({
+      filters:[{services:["heart_rate"]}],
+      optionalServices:["heart_rate"]
+    });
+    const server = await dev.gatt.connect();
+    const service = await server.getPrimaryService("heart_rate");
+    const ch = await service.getCharacteristic("heart_rate_measurement");
+    await ch.startNotifications();
+    ch.addEventListener("characteristicvaluechanged", (e)=>{
+      const v = e.target.value;
+      const flags = v.getUint8(0);
+      const hrValue = (flags & 0x01) ? v.getUint16(1,true) : v.getUint8(1);
+      hr = hrValue;
+      // RR-Interval (unit 1/1024 s)
+      let idx = (flags & 0x01) ? 3 : 2;
+      const rrLocal = [];
+      while(idx+1 < v.byteLength){
+        const rr = v.getUint16(idx,true)/1024.0;
+        rrLocal.push(rr); idx += 2;
+      }
+      if(rrLocal.length){ rrList.push(...rrLocal); if(rrList.length>60) rrList = rrList.slice(-60); }
+      bleStateEl.textContent = `接続中（HR=${hr})`;
+    });
+    bleStateEl.textContent = "接続完了";
+    log("BLE: 接続しました");
+  }catch(err){
+    log("BLE error: "+err.message);
+    bleStateEl.textContent = "未接続";
+  }
+}
+
+// ============ Spotify (PKCE) ============
+function base64url(bytes){
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+async function pkce(){
+  const ver = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const enc = new TextEncoder().encode(ver);
+  const digest = await crypto.subtle.digest("SHA-256", enc);
+  const chal = base64url(digest);
+  sessionStorage.setItem("pkce_verifier", ver);
+  return chal;
+}
+async function loginSpotify(){
+  // コールバックで code が来ているか？
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  if(!code){
+    const challenge = await pkce();
+    const url =
+      "https://accounts.spotify.com/authorize?" +
+      new URLSearchParams({
+        client_id: SPOTIFY_CLIENT_ID,
+        response_type: "code",
+        redirect_uri: REDIRECT_URI,
+        scope: SCOPES,
+        code_challenge_method: "S256",
+        code_challenge: challenge
+      });
+    location.href = url;
+    return;
+  }
+  // トークン交換（※サーバ不要：PKCE）
+  const ver = sessionStorage.getItem("pkce_verifier");
+  const body = new URLSearchParams({
+    grant_type:"authorization_code",
+    code, redirect_uri:REDIRECT_URI,
+    client_id:SPOTIFY_CLIENT_ID, code_verifier:ver
+  });
+  const r = await fetch("https://accounts.spotify.com/api/token", {
+    method:"POST",
+    headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+    body
+  });
+  const tok = await r.json();
+  if(tok.access_token){
+    spotifyAccessToken = tok.access_token;
+    spStateEl.textContent = "ログイン済み";
+    log("Spotify: ログイン完了");
+    // URLのcodeクエリを消す
+    history.replaceState({}, "", REDIRECT_URI);
+  }else{
+    log("Spotify トークン取得失敗: "+JSON.stringify(tok));
+  }
+}
+async function spRequest(method, url, body){
+  if(!spotifyAccessToken) throw new Error("no token");
+  return fetch(url, {
+    method, headers:{ "Authorization":"Bearer "+spotifyAccessToken, "Content-Type":"application/json" },
+    body: body? JSON.stringify(body): undefined
+  });
+}
+async function ensureShuffleOn(){
+  try{
+    await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true");
+  }catch(e){ log("shuffle err: "+e.message); }
+}
+async function playPlaylist(uri){
+  // “今アクティブなデバイス”に対して再生（勝手に音は鳴らない前提）
+  await ensureShuffleOn();
+  const r = await spRequest("PUT","https://api.spotify.com/v1/me/player/play",{
+    context_uri: uri, offset:{position:0}, position_ms:0
+  });
+  if(!r.ok){
+    log("play err: "+(await r.text()).slice(0,200));
+  }
+}
+
+// ============ SwitchBot Proxy ============
+async function switchbotCommand(deviceId, command){
+  // Workers 側でトークン付与＆CORS対応
+  try{
+    const r = await fetch(SWITCHBOT_PROXY, {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ deviceId, command })
+    });
+    if(!r.ok) log("SwitchBot err: "+r.status);
+  }catch(e){ log("SwitchBot fetch err: "+e.message); }
+}
+
+// ============ ルール（超簡易） ============
+// ※ OFF期は「記録のみ」。ON期ではここで emotion→Spotify/香り を切替。
+function decideEmotion(hrValue, rmssd){
+  // シンプルな例：rmssd低い→緊張、高い→鎮静。nullなら未分類
+  if(rmssd==null) return "unknown";
+  if(rmssd < 0.025) return "tension";
+  if(rmssd > 0.060) return "calm";
+  return "unknown";
+}
+
+// ============ セッション制御 ============
+async function startSession(){
+  if(!spotifyAccessToken) log("※ Spotifyログインしてね");
+  document.getElementById("btnStart").disabled = true;
+  document.getElementById("btnStop").disabled = false;
+  btnCsv.disabled = true;
+  csvRows = [["timestamp","datetime","session_id","hr","rmssd","emotion","note"]];
+  log("セッション開始: "+sessionId);
+
+  timer = setInterval(async ()=>{
+    const now = Date.now();
+    const rmssd = calcRMSSD(rrList.slice(-10)); // 直近のRRから簡易RMSSD
+    const emo = decideEmotion(hr, rmssd);
+    csvRows.push([now, isoNow(), sessionId, hr??"", rmssd??"", emo, ""]);
+    // ON期に切り替える時はここで：
+    // if(emo==="tension") await playPlaylist(PLAYLIST_TENSION_TO_CALM);
+    // if(emo==="calm")    {/*維持*/} else if(emo==="unknown"){/*何もしない*/}
+  }, 60*1000); // 1分おき
+}
+function stopSession(){
+  clearInterval(timer); timer=null;
+  document.getElementById("btnStart").disabled = false;
+  document.getElementById("btnStop").disabled = true;
+  btnCsv.disabled = false;
+  log("セッション終了");
+}
+// アンケート（メモ）をCSV末尾に足すだけ
+document.getElementById("btnNote").onclick = ()=>{
+  const mood = document.getElementById("mood").value||"";
+  const relax = document.getElementById("relax").value||"";
+  const notes = document.getElementById("notes").value||"";
+  csvRows.push([Date.now(), isoNow(), sessionId,"","","","mood="+mood+",relax="+relax+", "+notes]);
+  log("アンケ追加");
+};
+
+// CSV保存
+btnCsv.onclick = ()=>{
+  const blob = new Blob([csvRows.map(r=>r.join(",")).join("\n")], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), {href:url, download:`emotion_log_${sessionId}.csv`});
+  a.click(); URL.revokeObjectURL(url);
+};
+
+// UIイベント
+document.getElementById("btnBle").onclick = connectBLE;
+document.getElementById("btnSp").onclick = loginSpotify;
+document.getElementById("btnStart").onclick = startSession;
+document.getElementById("btnStop").onclick = stopSession;
+
+// ページに code が付いていたら自動でトークン交換
+if(new URLSearchParams(location.search).get("code")) loginSpotify();
+</script>
+</body>
+</html>
