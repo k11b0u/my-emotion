@@ -30,7 +30,7 @@
 
 <div class="card">
   <h2>ログ</h2>
-  <pre id="log" style="white-space:pre-wrap;height:160px;overflow:auto;background:#fafafa;padding:8px;border-radius:8px"></pre>
+  <pre id="log" style="white-space:pre-wrap;height:200px;overflow:auto;background:#fafafa;padding:8px;border-radius:8px"></pre>
   <button id="btnCsv" disabled>CSVダウンロード</button>
 </div>
 
@@ -43,130 +43,123 @@
 </div>
 
 <script>
-// ====== 設定 ↓ 必要に応じて書き換え ======
-const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e"; // ←置き換え
-const REDIRECT_URI = "https://my-emotion.vercel.app/"; // 同ページに戻す
+/* ===================== 設定（あなたの値を使用） ===================== */
+const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e";
+const REDIRECT_URI = "https://my-emotion.vercel.app/";  // Spotify側にも同じURIを登録
 const SCOPES = [
   "user-read-playback-state","user-modify-playback-state",
   "playlist-read-private","playlist-read-collaborative","streaming"
 ].join(" ");
-const SWITCHBOT_PROXY = "/api/switchbot"; // 後述のWorkers URL
+const SWITCHBOT_ENABLED = false;                // 香りを使わないなら false のままでOK
+const SWITCHBOT_PROXY = "/api/switchbot";       // 使うときだけ有効に
+const SB_ID = { tension:"<BOT_ID_TENSION>", relax:"<BOT_ID_RELAX>", depress:"<BOT_ID_DEPRESS>" };
 
-// 友人からもらったプレイリスト（例）
+// 友人からもらったプレイリスト（あなたの値を使用）
 const PLAYLIST_TENSION_TO_CALM = "spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";   // 緊張→鎮静
 const PLAYLIST_DEPRESS_TO_LIFT = "spotify:playlist:0TFRed2ZNnofW4uGxjytvT";   // 落ち込み→リフトアップ
 const PLAYLIST_CALM_MAINTAIN   = "spotify:playlist:2m9HoHfpO0tk5eky1fopVu";   // 分類不能＝鎮静維持
-// ====== 設定 ↑ ======
 
+/* ===== 実験ランタイム設定 ===== */
+const BLOCK_MIN = 10;              // ブロック長（分）
+const SESSION_TARGET_MIN = 120;    // 1セッション目安（分）
+const ROLL_WIN = 5;                // 安定度(標準偏差)のローリング窓（分）
+
+/* ===================== UI参照 ===================== */
 const logEl = document.getElementById("log");
 const bleStateEl = document.getElementById("bleState");
 const spStateEl  = document.getElementById("spState");
 const btnCsv = document.getElementById("btnCsv");
-let hr = null, rrList = []; // RR(秒)の履歴
+function log(s){ logEl.textContent += s+"\n"; logEl.scrollTop = logEl.scrollHeight; }
+function isoNow(){ return new Date().toISOString().replace("T"," ").slice(0,19); }
+
+/* ===================== 測定状態 ===================== */
+let participantId = localStorage.getItem("pid") || prompt("参加者ID（任意）：") || "p1";
+localStorage.setItem("pid", participantId);
+
+let hr = null, rrList = [];        // RRは秒
+let hrHist = [], rmssdHist = [];   // ローリング用
 let timer = null;
 let sessionId = Math.random().toString(36).slice(2,10);
 let spotifyAccessToken = null;
-let csvRows = [["timestamp","datetime","session_id","hr","rmssd","emotion","note"]];
 
-function log(s){logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight;}
-function isoNow(){return new Date().toISOString().replace("T"," ").slice(0,19);}
-
-// ---- HRV: RMSSD計算（RRは秒単位）
-function calcRMSSD(rrs){
-  if(rrs.length < 3) return null;
-  let sum = 0, n = 0;
-  for(let i=1;i<rrs.length;i++){
-    const diff = (rrs[i]-rrs[i-1]);
-    sum += diff*diff; n++;
-  }
-  return Math.sqrt(sum/n);
+/* ====== ベースライン（zスコア用／EWMA更新） ====== */
+let HR_base   = Number(localStorage.getItem("HR_base")   || 70);
+let HR_sd     = Number(localStorage.getItem("HR_sd")     || 8);
+let RMSSD_base= Number(localStorage.getItem("RMSSD_base")|| 0.040); // 40ms
+let RMSSD_sd  = Number(localStorage.getItem("RMSSD_sd")  || 0.015); // 15ms
+const EXERCISE_HR_ADD = 25;
+const EWMA_ALPHA = 0.05;
+function saveBaseline(){
+  localStorage.setItem("HR_base",HR_base);
+  localStorage.setItem("HR_sd",HR_sd);
+  localStorage.setItem("RMSSD_base",RMSSD_base);
+  localStorage.setItem("RMSSD_sd",RMSSD_sd);
 }
 
-// ============ Web Bluetooth (Heart Rate 0x180D) ============
+/* ===================== 計算系 ===================== */
+function calcRMSSD(rrs){
+  if(rrs.length < 3) return null;
+  let s=0, n=0; for(let i=1;i<rrs.length;i++){ const d=rrs[i]-rrs[i-1]; s+=d*d; n++; }
+  return Math.sqrt(s/n);
+}
+function mean(a){ if(!a.length) return null; return a.reduce((x,y)=>x+y,0)/a.length; }
+function std(a){ if(a.length<2) return null; const m=mean(a); let s=0; for(const x of a){ s+=(x-m)*(x-m);} return Math.sqrt(s/(a.length-1)); }
+
+/* ===================== Web Bluetooth ===================== */
 async function connectBLE(){
   try{
     log("BLE: デバイス選択...");
-    const dev = await navigator.bluetooth.requestDevice({
-      filters:[{services:["heart_rate"]}],
-      optionalServices:["heart_rate"]
-    });
+    const dev = await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}]});
     const server = await dev.gatt.connect();
-    const service = await server.getPrimaryService("heart_rate");
-    const ch = await service.getCharacteristic("heart_rate_measurement");
+    const svc = await server.getPrimaryService("heart_rate");
+    const ch = await svc.getCharacteristic("heart_rate_measurement");
     await ch.startNotifications();
-    ch.addEventListener("characteristicvaluechanged", (e)=>{
-      const v = e.target.value;
-      const flags = v.getUint8(0);
+    ch.addEventListener("characteristicvaluechanged", e=>{
+      const v=e.target.value, flags=v.getUint8(0);
       const hrValue = (flags & 0x01) ? v.getUint16(1,true) : v.getUint8(1);
       hr = hrValue;
-      // RR-Interval (unit 1/1024 s)
-      let idx = (flags & 0x01) ? 3 : 2;
-      const rrLocal = [];
-      while(idx+1 < v.byteLength){
-        const rr = v.getUint16(idx,true)/1024.0;
-        rrLocal.push(rr); idx += 2;
-      }
-      if(rrLocal.length){ rrList.push(...rrLocal); if(rrList.length>60) rrList = rrList.slice(-60); }
+      // RR (1/1024s)
+      let idx = (flags & 0x01) ? 3 : 2, rrLocal=[];
+      while(idx+1 < v.byteLength){ rrLocal.push(v.getUint16(idx,true)/1024.0); idx+=2; }
+      if(rrLocal.length){ rrList.push(...rrLocal); if(rrList.length>120) rrList=rrList.slice(-120); }
       bleStateEl.textContent = `接続中（HR=${hr})`;
     });
     bleStateEl.textContent = "接続完了";
     log("BLE: 接続しました");
-  }catch(err){
-    log("BLE error: "+err.message);
+  }catch(e){
+    log("BLE error: "+e.message);
     bleStateEl.textContent = "未接続";
   }
 }
 
-// ============ Spotify (PKCE) ============
-function base64url(bytes){
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+/* ===================== Spotify (PKCE) ===================== */
+function b64u(bytes){
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 }
 async function pkce(){
-  const ver = base64url(crypto.getRandomValues(new Uint8Array(32)));
-  const enc = new TextEncoder().encode(ver);
-  const digest = await crypto.subtle.digest("SHA-256", enc);
-  const chal = base64url(digest);
+  const ver = b64u(crypto.getRandomValues(new Uint8Array(32)));
+  const dig = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ver));
   sessionStorage.setItem("pkce_verifier", ver);
-  return chal;
+  return b64u(dig);
 }
 async function loginSpotify(){
-  // コールバックで code が来ているか？
-  const params = new URLSearchParams(location.search);
-  const code = params.get("code");
+  const p = new URLSearchParams(location.search); const code=p.get("code");
   if(!code){
     const challenge = await pkce();
-    const url =
-      "https://accounts.spotify.com/authorize?" +
-      new URLSearchParams({
-        client_id: SPOTIFY_CLIENT_ID,
-        response_type: "code",
-        redirect_uri: REDIRECT_URI,
-        scope: SCOPES,
-        code_challenge_method: "S256",
-        code_challenge: challenge
-      });
-    location.href = url;
-    return;
+    const url = "https://accounts.spotify.com/authorize?" + new URLSearchParams({
+      client_id:SPOTIFY_CLIENT_ID, response_type:"code", redirect_uri:REDIRECT_URI, scope:SCOPES,
+      code_challenge_method:"S256", code_challenge:challenge
+    });
+    location.href=url; return;
   }
-  // トークン交換（※サーバ不要：PKCE）
   const ver = sessionStorage.getItem("pkce_verifier");
-  const body = new URLSearchParams({
-    grant_type:"authorization_code",
-    code, redirect_uri:REDIRECT_URI,
-    client_id:SPOTIFY_CLIENT_ID, code_verifier:ver
-  });
-  const r = await fetch("https://accounts.spotify.com/api/token", {
-    method:"POST",
-    headers:{ "Content-Type":"application/x-www-form-urlencoded" },
-    body
-  });
+  const body = new URLSearchParams({grant_type:"authorization_code", code, redirect_uri:REDIRECT_URI, client_id:SPOTIFY_CLIENT_ID, code_verifier:ver});
+  const r = await fetch("https://accounts.spotify.com/api/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
   const tok = await r.json();
   if(tok.access_token){
     spotifyAccessToken = tok.access_token;
     spStateEl.textContent = "ログイン済み";
     log("Spotify: ログイン完了");
-    // URLのcodeクエリを消す
     history.replaceState({}, "", REDIRECT_URI);
   }else{
     log("Spotify トークン取得失敗: "+JSON.stringify(tok));
@@ -174,68 +167,152 @@ async function loginSpotify(){
 }
 async function spRequest(method, url, body){
   if(!spotifyAccessToken) throw new Error("no token");
-  return fetch(url, {
-    method, headers:{ "Authorization":"Bearer "+spotifyAccessToken, "Content-Type":"application/json" },
-    body: body? JSON.stringify(body): undefined
-  });
+  return fetch(url,{method,headers:{"Authorization":"Bearer "+spotifyAccessToken,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
 }
-async function ensureShuffleOn(){
-  try{
-    await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true");
-  }catch(e){ log("shuffle err: "+e.message); }
-}
+async function ensureShuffleOn(){ try{ await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true"); }catch{} }
 async function playPlaylist(uri){
-  // “今アクティブなデバイス”に対して再生（勝手に音は鳴らない前提）
   await ensureShuffleOn();
-  const r = await spRequest("PUT","https://api.spotify.com/v1/me/player/play",{
-    context_uri: uri, offset:{position:0}, position_ms:0
-  });
-  if(!r.ok){
-    log("play err: "+(await r.text()).slice(0,200));
-  }
+  const r = await spRequest("PUT","https://api.spotify.com/v1/me/player/play",{context_uri:uri, position_ms:0});
+  if(!r.ok) log("play err: "+(await r.text()).slice(0,200));
+}
+async function getCurrentPlayback(){
+  try{
+    const r = await spRequest("GET","https://api.spotify.com/v1/me/player/currently-playing");
+    if(r.status===204) return null;
+    if(!r.ok) return null;
+    return await r.json();
+  }catch{ return null; }
 }
 
-// ============ SwitchBot Proxy ============
+/* ===================== SwitchBot（任意） ===================== */
 async function switchbotCommand(deviceId, command){
-  // Workers 側でトークン付与＆CORS対応
+  if(!SWITCHBOT_ENABLED) return;
   try{
-    const r = await fetch(SWITCHBOT_PROXY, {
-      method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ deviceId, command })
-    });
+    const r = await fetch(SWITCHBOT_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deviceId,command})});
     if(!r.ok) log("SwitchBot err: "+r.status);
   }catch(e){ log("SwitchBot fetch err: "+e.message); }
 }
 
-// ============ ルール（超簡易） ============
-// ※ OFF期は「記録のみ」。ON期ではここで emotion→Spotify/香り を切替。
-function decideEmotion(hrValue, rmssd){
-  // シンプルな例：rmssd低い→緊張、高い→鎮静。nullなら未分類
+/* ===================== しきい値・感情決定 ===================== */
+function decideEmotion(meanHR, rmssd){
+  if(meanHR!=null && meanHR >= HR_base + EXERCISE_HR_ADD) return "exercise";
   if(rmssd==null) return "unknown";
-  if(rmssd < 0.025) return "tension";
-  if(rmssd > 0.060) return "calm";
+  const z_hr = (meanHR - HR_base)/(HR_sd||1e-6);
+  const z_rmssd = (rmssd - RMSSD_base)/(RMSSD_sd||1e-6);
+  if(z_rmssd >= 0.8) return "calm";
+  if((z_hr >= 1.2 && z_rmssd <= 0.2) || (z_hr >= 0.8 && z_rmssd <= 0.0)) return "tension";
+  if(z_hr <= -0.5 && z_rmssd <= -0.3) return "depress";
   return "unknown";
 }
+function maybeUpdateBaseline(meanHR, rmssd, z_hr, z_rmssd, minutesFromStart){
+  if(minutesFromStart<3) return;
+  if(meanHR==null || rmssd==null) return;
+  if(Math.abs(z_hr)<0.5 && z_rmssd>-0.3){
+    HR_base = (1-0.05)*HR_base + 0.05*meanHR;
+    RMSSD_base = (1-0.05)*RMSSD_base + 0.05*rmssd;
+    HR_sd   = (1-0.05)*HR_sd   + 0.05*Math.abs(meanHR-HR_base);
+    RMSSD_sd= (1-0.05)*RMSSD_sd+ 0.05*Math.abs(rmssd-RMSSD_base);
+    saveBaseline();
+  }
+}
 
-// ============ セッション制御 ============
+/* ===================== 条件ランダム化（10分ブロック） ===================== */
+function buildBlocks(){
+  const totalBlocks = Math.max(1, Math.round(SESSION_TARGET_MIN / BLOCK_MIN));
+  const conds = ["NONE","MUSIC","SCENT","BOTH"];
+  const arr=[]; for(let i=0;i<totalBlocks;i++) arr.push(conds[i%conds.length]);
+  for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  return arr;
+}
+let blocks = [], blockIdx=0, blockEndTs=0;
+
+/* ===================== 研究用CSV（拡張列） ===================== */
+let dayLabel = new Date().toISOString().slice(0,10);
+let csvRows = [[
+  "timestamp","datetime","pid","day","session_id","block","condition",
+  "hr","rmssd","z_hr","z_rmssd","d_hr","d_rmssd","roll_std_hr","roll_std_rmssd",
+  "emotion","track_id","track_name","artists","context_uri","note"
+]];
+
+/* ===================== セッション制御 ===================== */
+let startTs = 0;
 async function startSession(){
   if(!spotifyAccessToken) log("※ Spotifyログインしてね");
   document.getElementById("btnStart").disabled = true;
   document.getElementById("btnStop").disabled = false;
   btnCsv.disabled = true;
-  csvRows = [["timestamp","datetime","session_id","hr","rmssd","emotion","note"]];
-  log("セッション開始: "+sessionId);
+  csvRows.length = 1; // ヘッダ維持
+  sessionId = Math.random().toString(36).slice(2,10);
+  startTs = Date.now();
+
+  blocks = buildBlocks(); blockIdx=0;
+  blockEndTs = startTs + BLOCK_MIN*60*1000;
+  log("セッション開始: "+sessionId+" ／ ブロック数="+blocks.length);
+  await applyBlock(blocks[0]);
 
   timer = setInterval(async ()=>{
     const now = Date.now();
-    const rmssd = calcRMSSD(rrList.slice(-10)); // 直近のRRから簡易RMSSD
-    const emo = decideEmotion(hr, rmssd);
-    csvRows.push([now, isoNow(), sessionId, hr??"", rmssd??"", emo, ""]);
-    // ON期に切り替える時はここで：
-    // if(emo==="tension") await playPlaylist(PLAYLIST_TENSION_TO_CALM);
-    // if(emo==="calm")    {/*維持*/} else if(emo==="unknown"){/*何もしない*/}
-  }, 60*1000); // 1分おき
+    const rmssd = calcRMSSD(rrList.slice(-10));
+    const mHR = hr;
+
+    const z_hr = (mHR!=null)? (mHR - HR_base)/(HR_sd||1e-6) : null;
+    const z_rmssd = (rmssd!=null)? (rmssd - RMSSD_base)/(RMSSD_sd||1e-6) : null;
+
+    if(mHR!=null){ hrHist.push(mHR); if(hrHist.length>ROLL_WIN) hrHist.shift(); }
+    if(rmssd!=null){ rmssdHist.push(rmssd); if(rmssdHist.length>ROLL_WIN) rmssdHist.shift(); }
+    const d_hr = (hrHist.length>=2)? (hrHist[hrHist.length-1]-hrHist[hrHist.length-2]) : "";
+    const d_rmssd = (rmssdHist.length>=2)? (rmssdHist[rmssdHist.length-1]-rmssdHist[rmssdHist.length-2]) : "";
+    const rollStdHR = std(hrHist) ?? "";
+    const rollStdRMSSD = std(rmssdHist) ?? "";
+
+    const emo = decideEmotion(mHR, rmssd);
+    const mins = (now - startTs)/60000;
+    maybeUpdateBaseline(mHR, rmssd, z_hr??0, z_rmssd??0, mins);
+
+    const block = blocks[blockIdx] || "NONE";
+    if(block==="MUSIC" || block==="BOTH"){
+      if(emo==="tension")      await playPlaylist(PLAYLIST_TENSION_TO_CALM);
+      else if(emo==="depress") await playPlaylist(PLAYLIST_DEPRESS_TO_LIFT);
+      // calm/unknown は切替なし（維持）
+    }
+
+    // 曲ランキング用：介入NONEの時だけ曲メタを記録
+    let track = {id:"", name:"", artists:"", ctx:""};
+    if(block==="NONE"){
+      const pb = await getCurrentPlayback();
+      if(pb && pb.item){
+        track.id = pb.item.id||"";
+        track.name = pb.item.name||"";
+        track.artists = (pb.item.artists||[]).map(a=>a.name).join(", ");
+        track.ctx = (pb.context&&pb.context.uri)||"";
+      }
+    }
+
+    csvRows.push([
+      now, isoNow(), participantId, dayLabel, sessionId, (blockIdx+1)+"/"+blocks.length, block,
+      mHR??"", rmssd??"", z_hr??"", z_rmssd??"", d_hr, d_rmssd, rollStdHR, rollStdRMSSD,
+      emo, track.id, track.name, track.artists, track.ctx, ""
+    ]);
+
+    if(now >= blockEndTs){
+      blockIdx++;
+      if(blockIdx < blocks.length){
+        blockEndTs += BLOCK_MIN*60*1000;
+        await applyBlock(blocks[blockIdx]);
+      }else{
+        stopSession(); // 予定終了
+      }
+    }
+  }, 60*1000); // 毎分
 }
+
+async function applyBlock(blockName){
+  log(`▶ ブロック切替：${blockName}`);
+  if((blockName==="SCENT" || blockName==="BOTH") && SWITCHBOT_ENABLED){
+    await switchbotCommand(SB_ID.relax, "press"); // デフォは鎮静香り（3分噴霧等はBot側設定で）
+  }
+}
+
 function stopSession(){
   clearInterval(timer); timer=null;
   document.getElementById("btnStart").disabled = false;
@@ -243,33 +320,30 @@ function stopSession(){
   btnCsv.disabled = false;
   log("セッション終了");
 }
-// アンケート（メモ）をCSV末尾に足すだけ
+
+/* ===================== アンケート → CSV追記 ===================== */
 document.getElementById("btnNote").onclick = ()=>{
   const mood = document.getElementById("mood").value||"";
   const relax = document.getElementById("relax").value||"";
   const notes = document.getElementById("notes").value||"";
-  csvRows.push([Date.now(), isoNow(), sessionId,"","","","mood="+mood+",relax="+relax+", "+notes]);
+  csvRows.push([Date.now(), isoNow(), participantId, dayLabel, sessionId,"","","","","","","","","","","","","","", `mood=${mood},relax=${relax}, ${notes}`]);
   log("アンケ追加");
 };
 
-// CSV保存
+/* ===================== CSV保存 ===================== */
 btnCsv.onclick = ()=>{
   const blob = new Blob([csvRows.map(r=>r.join(",")).join("\n")], {type:"text/csv"});
   const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), {href:url, download:`emotion_log_${sessionId}.csv`});
+  const a = Object.assign(document.createElement("a"), {href:url, download:`emotion_log_${dayLabel}_${sessionId}.csv`});
   a.click(); URL.revokeObjectURL(url);
 };
 
-// UIイベント
+/* ===================== イベント ===================== */
 document.getElementById("btnBle").onclick = connectBLE;
 document.getElementById("btnSp").onclick = loginSpotify;
 document.getElementById("btnStart").onclick = startSession;
 document.getElementById("btnStop").onclick = stopSession;
-
-// ページに code が付いていたら自動でトークン交換
 if(new URLSearchParams(location.search).get("code")) loginSpotify();
 </script>
 </body>
 </html>
-
-
