@@ -43,6 +43,11 @@ button:disabled{
 
 /* ログ枠もダークで読みやすく */
 #log{ background:#0f0f0f; color:#e6e6e6; border:1px solid #333; }
+.logbox{
+  white-space:pre-wrap; height:160px; overflow:auto;
+  background:#0f0f0f; color:#e8e8e8; border:1px solid #333; border-radius:8px; padding:8px;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 
 </style>
 </head>
@@ -79,7 +84,7 @@ button:disabled{
 
 <div class="card">
   <h2>ログ</h2>
-  <pre id="log" style="white-space:pre-wrap;height:190px;overflow:auto;background:#fafafa;padding:8px;border-radius:8px"></pre>
+  <pre id="log" class="logbox"></pre>
   <div class="row">
     <button id="btnCsv" disabled>CSVダウンロード</button>
     <button id="btnClear">画面ログをクリア</button>
@@ -420,4 +425,5 @@ if(new URLSearchParams(location.search).get("code")) loginSpotify();
 </script>
 </body>
 </html>
+
 
