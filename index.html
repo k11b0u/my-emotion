@@ -45,7 +45,7 @@
 <script>
 // ====== 設定 ↓ 必要に応じて書き換え ======
 const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e"; // ←置き換え
-const REDIRECT_URI = "https://my-emoiton.vercel.app/"; // 同ページに戻す
+const REDIRECT_URI = "https://my-emotion.vercel.app/"; // 同ページに戻す
 const SCOPES = [
   "user-read-playback-state","user-modify-playback-state",
   "playlist-read-private","playlist-read-collaborative","streaming"
@@ -271,4 +271,5 @@ if(new URLSearchParams(location.search).get("code")) loginSpotify();
 </script>
 </body>
 </html>
+
 
