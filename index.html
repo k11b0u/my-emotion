@@ -5,190 +5,217 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Emotion Record</title>
 <style>
-  :root { color-scheme: light dark; }
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:920px;margin:20px auto;padding:0 12px}
-  .card{border:1px solid #333;border-radius:14px;padding:16px;margin:14px 0;box-shadow:0 1px 4px rgba(0,0,0,.12);background:#121212}
-  button{padding:10px 14px;border-radius:10px;border:1px solid #444;background:#1e1e1e;color:#f1f1f1;cursor:pointer}
-  button:hover:not(:disabled){ background:#2a2a2a }
-  button:disabled{ background:#2a2a2a; color:#9aa; border-color:#444; opacity:1; cursor:not-allowed }
-  code{background:#1a1a1a;padding:2px 6px;border-radius:6px}
-  .ok{color:#27c052;font-weight:700}.bad{color:#ff5252;font-weight:700}.muted{color:#b0b0b0}
-  input,textarea,select{width:100%;padding:8px;border:1px solid #444;border-radius:10px;background:#1a1a1a;color:#eee}
+  :root{ color-scheme:light dark; --bg:#121212; --panel:#1a1a1a; --line:#2a2a2a; --muted:#a9b0b8; --txt:#f3f5f7;
+         --accent:#5ac8fa; --ok:#27c052; --warn:#f5a524; --danger:#ff4d4f; }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);
+       max-width:1080px;margin:16px auto;padding:0 14px}
+  h1{margin:8px 0 12px}
+  .grid{display:grid;gap:12px}
+  @media (min-width:920px){ .grid{grid-template-columns:1fr 1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
   .row{display:flex;gap:10px;flex-wrap:wrap}
-  .row > * { flex:1 }
-  .logbox{white-space:pre-wrap;height:200px;overflow:auto;background:#0f0f0f;color:#e8e8e8;border:1px solid #333;border-radius:8px;padding:8px;font-family:ui-monospace,Consolas,monospace}
-  .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid #444;border-radius:999px;padding:6px 10px;background:#1a1a1a}
-  .goalok{color:#27c052}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999}
-  .modal .box{background:#171717;border:1px solid #333;border-radius:14px;padding:18px;max-width:460px;width:92%}
-  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .btns button{flex:1}
+  .row > * { flex:1 1 0 }
+  .btn{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:#1f1f1f;color:var(--txt);cursor:pointer}
+  .btn:hover:not(:disabled){ background:#252525 }
+  .btn:disabled{ opacity:.6; cursor:not-allowed }
+  .btn-danger{ background:#2a1516;border-color:#4d1f21 }
+  .btn-danger:hover{ background:#3a1c1e }
+  .btn-ghost{ background:transparent }
+  .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;background:#161616;padding:6px 10px}
+  .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;background:#151515;padding:4px 8px;font-size:13px}
+  .muted{color:var(--muted)}
+  input,select,textarea{width:100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:#141414;color:var(--txt)}
+  .logbox{white-space:pre-wrap;height:240px;overflow:auto;background:#0f0f0f;color:#e8e8e8;border:1px solid var(--line);
+          border-radius:12px;padding:10px;font-family:ui-monospace,Consolas,monospace}
+  .progress{height:12px;background:#0e0e0e;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg, #3870ff, #50e3c2)}
+  .tiny{font-size:12px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .switches{display:flex;gap:8px;flex-wrap:wrap}
+  .switches .pill{cursor:pointer}
+  .colfit{flex:0 0 auto}
 </style>
 </head>
 <body>
 <h1>Emotion Record</h1>
 
-<div class="card">
-  <h2>状態</h2>
-  <p>
-    BLE: <span id="bleState">未接続</span> ／
-    Spotify: <span id="spState">未ログイン</span>
-  </p>
-  <div class="row">
-    <button id="btnBle">心拍センサー接続（COOSPO）</button>
-    <button id="btnSp">Spotifyログイン</button>
-    <button id="btnStart">セッション開始</button>
-    <button id="btnStop" disabled>セッション終了</button>
-    <button id="btnPause" disabled>一時停止</button>
-    <button id="btnResume" disabled>再開</button>
+<div class="grid">
+  <!-- 左：状態＆操作 -->
+  <div class="card">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <div class="chips">
+        <span class="badge">BLE: <strong id="bleState">未接続</strong></span>
+        <span class="badge">Spotify: <strong id="spState">未ログイン</strong></span>
+        <span class="badge">Day: <strong id="dayBadge">1</strong></span>
+        <span class="badge">アルゴ: <strong id="algoBadge">v1.3</strong></span>
+      </div>
+      <span id="esmNext" class="badge muted">ESM: 未予定</span>
+    </div>
+
+    <div class="row" style="margin:10px 0">
+      <button id="btnBle" class="btn">心拍センサー接続</button>
+      <button id="btnSp" class="btn">Spotifyログイン</button>
+      <button id="btnStart" class="btn">セッション開始</button>
+      <button id="btnStop" class="btn btn-danger" disabled>セッション終了</button>
+      <button id="btnPause" class="btn btn-ghost" disabled>一時停止</button>
+      <button id="btnResume" class="btn" disabled>再開</button>
+    </div>
+
+    <div class="row" style="margin:10px 0">
+      <div>
+        <label>本日の条件（解析ラベル）</label>
+        <select id="cond">
+          <option value="NONE">NONE（介入なし）</option>
+          <option value="SCENT">SCENT（香りのみ）</option>
+          <option value="MUSIC">MUSIC（音楽のみ）</option>
+          <option value="BOTH">BOTH（複合）</option>
+        </select>
+        <div class="tiny muted" style="margin-top:4px">※ 実際の介入ON/OFFはコードが自動制御。</div>
+      </div>
+      <div>
+        <label>参加者ID（pid）</label>
+        <input id="pid" placeholder="hiro" value="hiro"/>
+      </div>
+      <div>
+        <label>本日の目標時間</label>
+        <select id="goalMin">
+          <option value="90">90分</option>
+          <option value="120" selected>120分</option>
+          <option value="150">150分</option>
+        </select>
+        <div id="goalText" class="tiny muted" style="margin-top:4px">進捗: 0 / 120分</div>
+        <div class="progress" aria-label="今日の進捗"><div id="goalBar" class="bar"></div></div>
+      </div>
+    </div>
+
+    <!-- Day 手動選択 -->
+    <div class="row" style="margin:6px 0">
+      <div class="colfit">
+        <label class="tiny muted">実験日（Day）</label>
+        <div class="row" style="gap:6px;align-items:center">
+          <button id="dayMinus" class="btn colfit">−</button>
+          <input id="dayNum" type="number" min="1" value="1" class="colfit" style="width:92px;text-align:center">
+          <button id="dayPlus" class="btn colfit">＋</button>
+        </div>
+      </div>
+      <div class="switches" style="align-items:center">
+        <label class="pill"><input type="checkbox" id="autoStop" checked> 目標到達で自動終了</label>
+        <label class="pill"><input type="checkbox" id="weeklyMode"> 週合計で管理（例: 480分/週）</label>
+      </div>
+    </div>
+
+    <div id="weeklyBox" class="row" style="display:none;margin-top:8px">
+      <div>
+        <label>今週の目標合計（分）</label>
+        <input type="number" id="weeklyGoal" value="480" min="60" step="30">
+      </div>
+      <div>
+        <label>今週の取得</label>
+        <div id="weeklyProg" class="pill">0 分</div>
+      </div>
+    </div>
+
+    <details style="margin-top:6px">
+      <summary class="tiny">（オプション）Spotify疎通テスト</summary>
+      <div class="row" style="margin-top:8px">
+        <button id="btnPlayCalm" class="btn">Calm維持を再生</button>
+        <button id="btnPlayTen"  class="btn">緊張→鎮静を再生</button>
+        <button id="btnPlayDep"  class="btn">落ち込み→リフト</button>
+      </div>
+      <div class="tiny muted">音が出ない時：Spotifyアプリを前面で1曲再生→一時停止→この画面。</div>
+    </details>
   </div>
 
-  <div class="row" style="margin-top:10px">
-    <div>
-      <label>本日の条件（解析用ラベル）</label>
-      <select id="cond">
-        <option value="NONE">NONE（介入なし）</option>
-        <option value="SCENT">SCENT（香りのみ）</option>
-        <option value="MUSIC">MUSIC（音楽のみ）</option>
-        <option value="BOTH">BOTH（複合）</option>
-      </select>
-      <small class="muted">※ 解析用ラベル。実際の介入ON/OFFはコード側で制御。</small>
+  <!-- 右：ログ/CSV/アンケ -->
+  <div class="card">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <h2 style="margin:0">ログ</h2>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <button id="btnCsv" class="btn" disabled>CSVダウンロード</button>
+        <button id="btnClear" class="btn btn-ghost">画面ログをクリア</button>
+      </div>
     </div>
-    <div>
-      <label>参加者ID（pid）</label>
-      <input id="pid" placeholder="hiro" value="hiro"/>
-    </div>
-    <div>
-      <label>本日の目標時間</label>
-      <select id="goalMin">
-        <option value="90">90分</option>
-        <option value="120" selected>120分</option>
-        <option value="150">150分</option>
-      </select>
-      <div id="goalView" class="muted pill" style="margin-top:6px">進捗: 0 / 120分</div>
-    </div>
-    <div>
-      <label>実験日（Day）</label>
-      <div id="dayBadge" class="pill muted">Day ?</div>
-    </div>
-  </div>
+    <pre id="log" class="logbox" aria-live="polite"></pre>
 
-  <div class="row" style="margin-top:10px">
-    <label class="pill"><input type="checkbox" id="autoStop" checked> 目標到達/23:00で自動終了</label>
-    <label class="pill"><input type="checkbox" id="weeklyMode"> 週合計で管理する（例: 480分/週）</label>
-  </div>
-
-  <div class="row" id="weeklyBox" style="display:none;margin-top:6px">
-    <div>
-      <label>今週の目標合計（分）</label>
-      <input type="number" id="weeklyGoal" value="480" min="60" step="30">
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <h3 style="margin:0 0 8px">就寝前アンケート</h3>
+    <div class="row">
+      <div><label>いまの気分（0〜10）</label><input type="number" id="mood" min="0" max="10"/></div>
+      <div><label>リラックス度（0〜10）</label><input type="number" id="relax" min="0" max="10"/></div>
     </div>
-    <div class="muted" id="weeklyProg" style="align-self:flex-end">今週の取得: 0 分</div>
+    <label>メモ（任意）</label>
+    <textarea id="notes" rows="2" placeholder="寝つき・出来事など"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="btnNote" class="btn">アンケ追加</button>
+    </div>
   </div>
-</div>
-
-<div class="card">
-  <h2>ログ</h2>
-  <pre id="log" class="logbox" aria-live="polite"></pre>
-  <div class="row">
-    <button id="btnCsv" disabled>CSVダウンロード</button>
-    <button id="btnClear">画面ログをクリア</button>
-  </div>
-</div>
-
-<div class="card">
-  <h2>就寝前アンケート</h2>
-  <div class="row">
-    <div><label>いまの気分（0〜10）</label><input type="number" id="mood" min="0" max="10"/></div>
-    <div><label>リラックス度（0〜10）</label><input type="number" id="relax" min="0" max="10"/></div>
-  </div>
-  <label>メモ（任意）</label><textarea id="notes" rows="2" placeholder="寝つき・出来事など"></textarea>
-  <button id="btnNote">追加</button>
 </div>
 
 <!-- ESM モーダル -->
-<div id="esmModal" class="modal" role="dialog" aria-modal="true" aria-label="いまの感じは？">
-  <div class="box">
+<div id="esmModal" class="modal" role="dialog" aria-modal="true" aria-label="いまの感じは？" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);align-items:center;justify-content:center;z-index:9999">
+  <div class="box" style="background:#171717;border:1px solid #333;border-radius:14px;padding:18px;max-width:460px;width:92%">
     <h3 style="margin:0 0 8px">いまの感じは？</h3>
-    <p class="muted" style="margin:0 0 10px">※ ワンタップでOK（約3秒）</p>
-    <div class="btns">
-      <button data-esm="tense">緊張（高ぶり/焦り）</button>
-      <button data-esm="calm">鎮静（落ち着き）</button>
-      <button data-esm="depress">落ち込み（気分↓）</button>
-      <button data-esm="skip">スキップ</button>
+    <p class="muted tiny" style="margin:0 0 10px">※ ワンタップでOK（約3秒）</p>
+    <div class="row">
+      <button data-esm="tense" class="btn">緊張（高ぶり）</button>
+      <button data-esm="calm"  class="btn">鎮静（落ち着き）</button>
+      <button data-esm="depress" class="btn">落ち込み</button>
+      <button data-esm="skip" class="btn btn-ghost">スキップ</button>
     </div>
   </div>
 </div>
 
 <script>
-// ===== 設定 =====
-const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e";
-const REDIRECT_URI       = location.origin + location.pathname;
-const SCOPES = [
-  "user-read-playback-state","user-modify-playback-state",
-  "playlist-read-private","playlist-read-collaborative","streaming"
-].join(" ");
-const PLAYLIST_TENSION_TO_CALM = "spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
-const PLAYLIST_DEPRESS_TO_LIFT = "spotify:playlist:0TFRed2ZNnofW4uGxjytvT";
-const PLAYLIST_CALM_MAINTAIN   = "spotify:playlist:2m9HoHfpO0tk5eky1fopVu";
-const ALGO_VERSION = "v1.3";
-
-// ===== しきい値（研究固定） =====
-const ZTH = {
-  T_RMSSD_STRONG: -0.60, T_RMSSD_SOFT: -0.30, T_HR_HELP: 0.20,
-  C_RMSSD_STRONG:  0.60, C_RMSSD_SOFT:  0.30, C_HR_HELP:  0.20,
-  D_HR_LOW:       -0.40, D_RMSSD_LOW:  -0.20, D_RMSSD_HIGH: 0.10
-};
+/* =========== 研究固定：アルゴ/しきい値 =========== */
+const ALGO_VERSION="v1.3"; document.getElementById("algoBadge").textContent=ALGO_VERSION;
+const ZTH={ T_RMSSD_STRONG:-0.60, T_RMSSD_SOFT:-0.30, T_HR_HELP:0.20,
+            C_RMSSD_STRONG: 0.60, C_RMSSD_SOFT: 0.30, C_HR_HELP:0.20,
+            D_HR_LOW:-0.40, D_RMSSD_LOW:-0.20, D_RMSSD_HIGH:0.10 };
 const VOTE_WIN=5, VOTE_NEED=3, SEG_MIN_MIN=3, WARMUP_MIN=3;
-const SD_HR_FLOOR=3.0, SD_RMSSD_FLOOR=0.015;   // 15ms
-const CUTOFF_HOUR=23;
+const SD_HR_FLOOR=3.0, SD_RMSSD_FLOOR=0.015;
 
-// ===== 便利 =====
-const logEl=document.getElementById("log");
-const bleStateEl=document.getElementById("bleState");
-const spStateEl=document.getElementById("spState");
-const btnCsv=document.getElementById("btnCsv");
-const btnClear=document.getElementById("btnClear");
-const condSel=document.getElementById("cond");
-const goalSel=document.getElementById("goalMin");
-const goalView=document.getElementById("goalView");
-const esmModal=document.getElementById("esmModal");
-const dayBadge=document.getElementById("dayBadge");
+/* =========== Spotify/プレイリスト =========== */
+const SPOTIFY_CLIENT_ID="7838a0cf003644ae8b5f3f75b9eb534e";
+const REDIRECT_URI=location.origin+location.pathname;
+const SCOPES=["user-read-playback-state","user-modify-playback-state","playlist-read-private","playlist-read-collaborative","streaming"].join(" ");
+const PLAYLIST_TENSION_TO_CALM="spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
+const PLAYLIST_DEPRESS_TO_LIFT="spotify:playlist:0TFRed2ZNnofW4uGxjytvT";
+const PLAYLIST_CALM_MAINTAIN ="spotify:playlist:2m9HoHfpO0tk5eky1fopVu";
 
-function log(s){ logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+/* =========== ユーティリティ（JST固定） =========== */
+const $=s=>document.querySelector(s);
+const logEl=$("#log"), bleStateEl=$("#bleState"), spStateEl=$("#spState"), esmNext=$("#esmNext");
+function log(s){ logEl.textContent+=s+"\n"; logEl.scrollTop=logEl.scrollHeight; }
 function clearLog(){ logEl.textContent=""; }
-function isoNow(){ return new Date().toISOString().replace("T"," ").slice(0,19); }
-function isoDay(){ return new Date().toISOString().slice(0,10); }
-function csvEscape(v){ if(v==null) return ""; const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
-function randomMinutes(min,max){ return Math.floor(min + Math.random()*(max-min+1)); }
-function isPastCutoff(){ return (new Date()).getHours() >= CUTOFF_HOUR; }
-
-// ===== ユーザー/Day保存 =====
-function dayISO(d=new Date()){ return d.toISOString().slice(0,10); }
-function toWeekKey(d=new Date()){
-  const tmp=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum=tmp.getUTCDay()||7; tmp.setUTCDate(tmp.getUTCDate()+4-dayNum);
-  const yearStart=new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
-  const w=Math.ceil((((tmp-yearStart)/86400000)+1)/7);
-  return `${tmp.getUTCFullYear()}-W${String(w).padStart(2,'0')}`;
+const JST_FMT_DATE = new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"});
+const JST_FMT_DATETIME = new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+function nowJstObj(){ return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Tokyo"})); }
+function dayIsoJST(d=nowJstObj()){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), da=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${da}`; }
+function datetimeStrJST(d=nowJstObj()){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), da=String(d.getDate()).padStart(2,"0");
+  const hh=String(d.getHours()).padStart(2,"0"), mi=String(d.getMinutes()).padStart(2,"0"), ss=String(d.getSeconds()).padStart(2,"0");
+  return `${y}-${m}-${da} ${hh}:${mi}:${ss}`;
 }
-function loadUser(pid){ try{ return JSON.parse(localStorage.getItem(`emotion_user_${pid}`))||null; }catch{ return null; } }
-function saveUser(u){ try{ localStorage.setItem(`emotion_user_${u.pid}`, JSON.stringify(u)); }catch{} }
+function randomMinutes(min,max){ return Math.floor(min + Math.random()*(max-min+1)); }
+function csvEscape(v){ if(v==null) return ""; const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
+
+/* =========== ユーザー/Day保存（Day番号ベース） =========== */
+function loadUser(pid){ try{return JSON.parse(localStorage.getItem(`emotion_user_${pid}`))||null}catch{ return null } }
+function saveUser(u){ try{localStorage.setItem(`emotion_user_${u.pid}`,JSON.stringify(u))}catch{} }
 function ensureUser(pid){
   let u=loadUser(pid);
-  if(!u){ u={pid, study_start_iso: dayISO(), days:{}, weekly:{}, total_valid:0, total_days:0}; saveUser(u); }
+  if(!u){ u={pid, daysByNum:{}, weekly:{}, total_valid:0, max_day_num:1}; saveUser(u); }
   return u;
 }
-function ensureUserDay(u, iso){
-  if(!u.days[iso]){ u.total_days+=1; u.days[iso]={day_num:u.total_days,total_valid:0,sessions:[]}; saveUser(u); }
-  return u.days[iso];
+function ensureDay(u,dayNum){
+  if(!u.daysByNum[dayNum]){ u.daysByNum[dayNum]={total_valid:0,sessions:[]}; if(dayNum>u.max_day_num) u.max_day_num=dayNum; saveUser(u); }
+  return u.daysByNum[dayNum];
 }
-function bumpWeekly(u, minutes, d=new Date()){ const wk=toWeekKey(d); u.weekly[wk]=(u.weekly[wk]||0)+minutes; saveUser(u); }
-function setDayBadge(u, iso){ const info=u.days[iso]; dayBadge.textContent = `Day ${info?info.day_num:"?"}`; }
+function setDayBadgeNum(n){ $("#dayBadge").textContent=String(n); $("#dayNum").value=String(n); }
 
-// ====== 状態変数 ======
+/* =========== 状態変数 =========== */
 let hr=null, rrList=[];
-let timer=null, esmTimer=null;
+let timer=null, esmTimer=null, esmDueAt=0;
 let sessionId=Math.random().toString(36).slice(2,10);
 let spotifyAccessToken=null, spotifyRefreshToken=null, spotifyTokenExpAt=0;
 let csvRows=[[]];
@@ -198,17 +225,17 @@ let votes={tension:[],calm:[],depress:[]};
 let lastEmotion="unknown", lastNonUnknown="unknown", lastNonUnknownAt=0;
 let startedAtMs=0, paused=false, noPlayStreak=0;
 
-// ====== AutoSave ======
-const LS_KEY="emotion_recorder_autosave_v1";
+/* =========== AutoSave（当日ではなく“選択Day”で復元） =========== */
+const LS_KEY="emotion_recorder_autosave_v2";
 function saveState(){
   try{
     const payload={
       csvRows, sessionId, validMin, playMin, anyBLE, bleDropped, lastHadBLE,
       currentEmotionKey, waitingSwitch, votes, lastEmotion, lastNonUnknown,
-      lastNonUnknownAt, startedAtMs, paused,
+      lastNonUnknownAt, startedAtMs, paused, esmDueAt,
       hr_base, rmssd_base, sd_hr, sd_rmssd,
-      pid:(document.getElementById("pid").value||"pid"), condition:condSel.value, goal:goalSel.value,
-      dayISO: isoDay(), algo: ALGO_VERSION
+      pid:($("#pid").value||"pid"), condition:$("#cond").value, goal:$("#goalMin").value,
+      dayNum: parseInt($("#dayNum").value||"1",10), algo: ALGO_VERSION
     };
     localStorage.setItem(LS_KEY, JSON.stringify(payload));
   }catch{}
@@ -217,32 +244,22 @@ function loadStateIfAny(){
   try{
     const s=localStorage.getItem(LS_KEY); if(!s) return false;
     const p=JSON.parse(s);
-    if(p.dayISO!==isoDay()) { localStorage.removeItem(LS_KEY); return false; }
-
-    csvRows=p.csvRows||[[]]; sessionId=p.sessionId||sessionId;
-    validMin=p.validMin||0; playMin=p.playMin||0; anyBLE=!!p.anyBLE;
-    bleDropped=!!p.bleDropped; lastHadBLE=!!p.lastHadBLE;
+    csvRows=p.csvRows||[[]]; sessionId=p.sessionId||sessionId; validMin=p.validMin||0; playMin=p.playMin||0;
+    anyBLE=!!p.anyBLE; bleDropped=!!p.bleDropped; lastHadBLE=!!p.lastHadBLE;
     currentEmotionKey=p.currentEmotionKey||null; waitingSwitch=!!p.waitingSwitch;
     votes=p.votes||{tension:[],calm:[],depress:[]};
-    // votesが肥大化していたら窓幅に丸める（復元時バグ潰し）
     ["tension","calm","depress"].forEach(k=>{ if(votes[k].length>VOTE_WIN) votes[k]=votes[k].slice(-VOTE_WIN); });
-
-    lastEmotion=p.lastEmotion||"unknown"; lastNonUnknown=p.lastNonUnknown||"unknown";
-    lastNonUnknownAt=p.lastNonUnknownAt||0; startedAtMs=p.startedAtMs||Date.now();
-    paused=!!p.paused;
-
-    hr_base=p.hr_base??hr_base; rmssd_base=p.rmssd_base??rmssd_base;
-    sd_hr=p.sd_hr??sd_hr; sd_rmssd=p.sd_rmssd??sd_rmssd;
-
-    if(p.pid) document.getElementById("pid").value=p.pid;
-    if(p.condition) condSel.value=p.condition;
-    if(p.goal) goalSel.value=p.goal;
+    lastEmotion=p.lastEmotion||"unknown"; lastNonUnknown=p.lastNonUnknown||"unknown"; lastNonUnknownAt=p.lastNonUnknownAt||0;
+    startedAtMs=p.startedAtMs||Date.now(); paused=!!p.paused; esmDueAt=p.esmDueAt||0;
+    hr_base=p.hr_base??hr_base; rmssd_base=p.rmssd_base??rmssd_base; sd_hr=p.sd_hr??sd_hr; sd_rmssd=p.sd_rmssd??sd_rmssd;
+    if(p.pid) $("#pid").value=p.pid; if(p.condition) $("#cond").value=p.condition; if(p.goal) $("#goalMin").value=p.goal;
+    if(p.dayNum){ setDayBadgeNum(p.dayNum); }
     return true;
   }catch{ return false; }
 }
 function clearSavedState(){ localStorage.removeItem(LS_KEY); }
 
-// ===== HRV（RRは秒、0.3〜2.0sのみ採用）=====
+/* =========== HRV =========== */
 function calcRMSSD(rrs){
   const xs=rrs.filter(x=>x>=0.3 && x<=2.0);
   if(xs.length<3) return null;
@@ -250,18 +267,18 @@ function calcRMSSD(rrs){
   return Math.sqrt(sum/n);
 }
 
-// ===== Web Bluetooth（簡易）=====
+/* =========== BLE =========== */
 async function connectBLE(){
   try{
-    log("BLE: デバイス選択…");
-    const dev=await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}], optionalServices:["heart_rate"]});
+    log("🩺 BLE: デバイス選択…");
+    const dev=await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}],optionalServices:["heart_rate"]});
     const server=await dev.gatt.connect();
-    const service=await server.getPrimaryService("heart_rate");
-    const ch=await service.getCharacteristic("heart_rate_measurement");
+    const svc=await server.getPrimaryService("heart_rate");
+    const ch=await svc.getCharacteristic("heart_rate_measurement");
     await ch.startNotifications();
     ch.addEventListener("characteristicvaluechanged",(e)=>{
       const v=e.target.value, flags=v.getUint8(0), f16=(flags&0x01)!==0, hasRR=(flags&0x10)!==0;
-      hr = f16? v.getUint16(1,true) : v.getUint8(1);
+      hr=f16?v.getUint16(1,true):v.getUint8(1);
       anyBLE=true; lastHadBLE=true;
       let idx=f16?3:2; const rrLocal=[];
       if(hasRR){ while(idx+1<v.byteLength){ rrLocal.push(v.getUint16(idx,true)/1024.0); idx+=2; } }
@@ -269,103 +286,89 @@ async function connectBLE(){
       bleStateEl.textContent=`接続中（HR=${hr})`;
     });
     dev.addEventListener("gattserverdisconnected",()=>{ bleStateEl.textContent="切断"; if(lastHadBLE) bleDropped=true; lastHadBLE=false; });
-    bleStateEl.textContent="接続完了"; log("BLE: 接続しました");
-  }catch(err){ log("BLE error: "+err.message); bleStateEl.textContent="未接続"; }
+    bleStateEl.textContent="接続完了"; log("✅ BLE: 接続しました");
+  }catch(err){ bleStateEl.textContent="未接続"; log("⚠️ BLE error: "+err.message); }
 }
 
-// ===== Spotify（PKCE + keep-alive）=====
+/* =========== Spotify（PKCE/起動） =========== */
 function base64url(bytes){ return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
-async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const dig=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ver)); const chal=base64url(dig); sessionStorage.setItem("pkce_verifier", ver); return chal; }
+async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const dig=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(ver)); const chal=base64url(dig); sessionStorage.setItem("pkce_verifier",ver); return chal; }
 async function loginSpotify(){
   const code=new URLSearchParams(location.search).get("code");
   if(!code){
     const challenge=await pkce();
-    location.href="https://accounts.spotify.com/authorize?"+new URLSearchParams({
-      client_id:SPOTIFY_CLIENT_ID,response_type:"code",redirect_uri:REDIRECT_URI,scope:SCOPES,code_challenge_method:"S256",code_challenge:challenge
-    });
+    location.href="https://accounts.spotify.com/authorize?"+new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,response_type:"code",redirect_uri:REDIRECT_URI,scope:SCOPES,code_challenge_method:"S256",code_challenge:challenge});
     return;
   }
   const ver=sessionStorage.getItem("pkce_verifier");
   const body=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:REDIRECT_URI,client_id:SPOTIFY_CLIENT_ID,code_verifier:ver});
   const r=await fetch("https://accounts.spotify.com/api/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
-  const tok=await r.json();
-  if(tok.access_token){
-    spotifyAccessToken=tok.access_token; spotifyRefreshToken=tok.refresh_token||null; spotifyTokenExpAt=Date.now()+((tok.expires_in||3600)*1000);
-    spStateEl.textContent="ログイン済み"; log("Spotify: ログイン完了"); history.replaceState({}, "", REDIRECT_URI);
-  }else{ log("Spotify トークン取得失敗: "+JSON.stringify(tok)); }
+  const t=await r.json();
+  if(t.access_token){ spotifyAccessToken=t.access_token; spotifyRefreshToken=t.refresh_token||null; spotifyTokenExpAt=Date.now()+((t.expires_in||3600)*1000);
+    spStateEl.textContent="ログイン済み"; log("✅ Spotify: ログイン完了"); history.replaceState({}, "", REDIRECT_URI);
+  }else{ log("⚠️ Spotify トークン取得失敗: "+JSON.stringify(t)); }
 }
 async function refreshSpotifyIfNeeded(){
   if(!spotifyRefreshToken) return;
   if(Date.now()<spotifyTokenExpAt-30000) return;
   const body=new URLSearchParams({grant_type:"refresh_token",refresh_token:spotifyRefreshToken,client_id:SPOTIFY_CLIENT_ID});
   const r=await fetch("https://accounts.spotify.com/api/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
-  const tok=await r.json();
-  if(tok.access_token){ spotifyAccessToken=tok.access_token; spotifyTokenExpAt=Date.now()+((tok.expires_in||3600)*1000); log("Spotify: トークン更新"); }
+  const t=await r.json(); if(t.access_token){ spotifyAccessToken=t.access_token; spotifyTokenExpAt=Date.now()+((t.expires_in||3600)*1000); log("🔄 Spotify: トークン更新"); }
 }
 async function spRequest(method,url,body){ await refreshSpotifyIfNeeded(); if(!spotifyAccessToken) throw new Error("no token");
   return fetch(url,{method,headers:{"Authorization":"Bearer "+spotifyAccessToken,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
 }
-async function getDevices(){
-  const r=await spRequest("GET","https://api.spotify.com/v1/me/player/devices");
-  const js=await r.json().catch(()=>({devices:[]}));
-  const devs=js.devices||[];
-  log("Spotify devices: "+(devs.map(d=>`${d.name}${d.is_active?'(active)':''}`).join(", ")||"none"));
-  return devs;
-}
+async function getDevices(){ const r=await spRequest("GET","https://api.spotify.com/v1/me/player/devices"); const js=await r.json().catch(()=>({devices:[]}));
+  const devs=js.devices||[]; log("🎧 Devices: "+(devs.map(d=>`${d.name}${d.is_active?'(active)':''}`).join(", ")||"none")); return devs; }
 async function ensureActiveDevice(){
-  const devs=await getDevices();
-  if(devs.length===0){ log("Spotify: 端末なし（アプリを開いて1曲再生→一時停止してください）"); return null; }
+  const devs=await getDevices(); if(devs.length===0){ log("⚠️ 再生端末なし：Spotifyアプリで1曲再生→一時停止→この画面へ"); return null; }
   const active=devs.find(d=>d.is_active)||devs[0];
   try{ await spRequest("PUT","https://api.spotify.com/v1/me/player",{device_ids:[active.id],play:false}); }catch(e){ log("transfer err: "+e.message); }
-  log("use device: "+active.name);
   return active.id;
 }
-async function ensureShuffleOn(){ try{ await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true"); }catch(e){ log("shuffle err: "+e.message);} }
+async function ensureShuffleOn(){ try{ await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true"); }catch(e){} }
 async function getCurrentPlaying(){ try{ const r=await spRequest("GET","https://api.spotify.com/v1/me/player/currently-playing"); if(r.status===204) return null; return await r.json(); }catch(_){ return null; } }
 function extractTrackInfo(j){
   try{
     if(!j||!j.is_playing||!j.item) return {track_id:"",track_name:"",artists:"",context_uri:"",duration_ms:0,progress_ms:0,is_playing:false};
-    const item=j.item, artists=(item.artists||[]).map(a=>a.name).join(", "), ctx=(j.context&&j.context.uri)?j.context.uri:"";
-    return {track_id:item.id||"",track_name:item.name||"",artists,context_uri:ctx,duration_ms:item.duration_ms||0,progress_ms:j.progress_ms||0,is_playing:!!j.is_playing};
+    const a=(j.item.artists||[]).map(x=>x.name).join(", "); const ctx=(j.context&&j.context.uri)?j.context.uri:"";
+    return {track_id:j.item.id||"",track_name:j.item.name||"",artists:a,context_uri:ctx,duration_ms:j.item.duration_ms||0,progress_ms:j.progress_ms||0,is_playing:!!j.is_playing};
   }catch(_){ return {track_id:"",track_name:"",artists:"",context_uri:"",duration_ms:0,progress_ms:0,is_playing:false}; }
 }
 async function bootAndPlay(uri){
-  const devId=await ensureActiveDevice(); if(!devId) return false;
-  let r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(devId),{context_uri:uri,position_ms:0});
+  const dev=await ensureActiveDevice(); if(!dev) return false;
+  await ensureShuffleOn();
+  let r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(dev),{context_uri:uri,position_ms:0});
   if(!r.ok){
-    const t=await r.text(); log("play err(1): "+t.slice(0,200));
-    try{ await spRequest("POST","https://api.spotify.com/v1/me/player/next?device_id="+encodeURIComponent(devId)); }catch(_){}
-    r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(devId),{context_uri:uri,position_ms:0});
-    if(!r.ok){ log("play err(2): "+(await r.text()).slice(0,200)); return false; }
+    try{ await spRequest("POST","https://api.spotify.com/v1/me/player/next?device_id="+encodeURIComponent(dev)); }catch(_){}
+    r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(dev),{context_uri:uri,position_ms:0});
+    if(!r.ok){ log("⚠️ play失敗: "+(await r.text()).slice(0,160)); return false; }
   }
   return true;
 }
-async function playPlaylist(uri){
-  await ensureShuffleOn();
-  const ok=await bootAndPlay(uri);
-  if(!ok) log("play failed: device/広告/制限の可能性");
-}
+async function playPlaylist(uri){ const ok=await bootAndPlay(uri); if(!ok) log("⚠️ 再生できません（端末/広告/権限）"); }
 
-// ===== 切替：曲末待ち→来なければ5分で諦め（途中切替せず）=====
+/* =========== 切替（曲末待ち：最大5分） =========== */
 async function scheduleSwitchIfNeeded(targetKey){
   if(targetKey===currentEmotionKey || waitingSwitch) return;
   waitingSwitch=true;
-  const uri=targetKey==="tension"?PLAYLIST_TENSION_TO_CALM: targetKey==="depress"?PLAYLIST_DEPRESS_TO_LIFT: PLAYLIST_CALM_MAINTAIN;
+  const uri = targetKey==="tension"?PLAYLIST_TENSION_TO_CALM:
+              targetKey==="depress"?PLAYLIST_DEPRESS_TO_LIFT:PLAYLIST_CALM_MAINTAIN;
   const deadline=Date.now()+5*60*1000; let allow=false;
   while(Date.now()<deadline){
     const info=extractTrackInfo(await getCurrentPlaying());
     if(!info.is_playing||!info.duration_ms) break;
     const remain=Math.max(0, info.duration_ms-(info.progress_ms||0));
     if(remain<=3500){ allow=true; break; }
-    await new Promise(r=>setTimeout(r,1500));
+    await new Promise(r=>setTimeout(r,1200));
   }
   if(allow){ await playPlaylist(uri); currentEmotionKey=targetKey; log(`🎵 Playlist → ${targetKey}`); }
   else{ log("🎵 Switch skipped (no end-of-track within 5min)"); }
   waitingSwitch=false;
 }
 
-// ===== 判定 =====
-function pushVote(key, ok){ const arr=votes[key]; arr.push(ok?1:0); if(arr.length>VOTE_WIN) arr.shift(); return arr.reduce((a,b)=>a+b,0)>=VOTE_NEED; }
+/* =========== 判定（Z＋多数決＋3分維持） =========== */
+function pushVote(key, ok){ const a=votes[key]; a.push(ok?1:0); if(a.length>VOTE_WIN) a.shift(); return a.reduce((x,y)=>x+y,0)>=VOTE_NEED; }
 function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   if(rmssd==null || z_hr==="" || z_rmssd==="") return "unknown";
   if(Date.now()-startedAtMs >= WARMUP_MIN*60*1000){
@@ -380,60 +383,70 @@ function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   lastEmotion=decided; return decided;
 }
 
-// ===== ESM =====
-function scheduleNextESM(){ clearTimeout(esmTimer); const m=randomMinutes(28,34); esmTimer=setTimeout(()=>{ esmModal.style.display="flex"; }, m*60*1000); }
-esmModal.addEventListener("click",(e)=>{ if(e.target===esmModal) esmModal.style.display="none"; });
-esmModal.querySelectorAll("button[data-esm]").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
+/* =========== ESM（30分±ゆらぎ） =========== */
+function scheduleNextESM(){
+  clearTimeout(esmTimer);
+  const m=randomMinutes(28,34);
+  esmDueAt=Date.now()+m*60*1000;
+  const d=new Date(esmDueAt);
+  const j=nowJstObj(); j.setTime(esmDueAt);
+  const hh=String(j.getHours()).padStart(2,"0")+":"+String(j.getMinutes()).padStart(2,"0");
+  esmNext.textContent=`ESM: ${hh}頃`;
+  esmTimer=setTimeout(()=>{ $("#esmModal").style.display="flex"; }, m*60*1000);
+}
+$("#esmModal").addEventListener("click",(e)=>{ if(e.target===$("#esmModal")) $("#esmModal").style.display="none"; });
+document.querySelectorAll("#esmModal button[data-esm]").forEach(btn=>{
+  btn.addEventListener("click",()=>{
     const val=btn.getAttribute("data-esm");
-    csvRows.push([ Date.now(), isoNow(), (document.getElementById("pid").value||"pid"),
-      new Date().toLocaleDateString("ja-JP"), isoDay(), sessionId, "block1", condSel.value,
-      "","","","","","","","","","",
-      "","","","", "","","","", 0,0,
-      0,0,0,0, "","","", "esm", val, "","", ALGO_VERSION
+    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
+      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), // 旧表示日付/JST日付
+      parseInt($("#dayNum").value||"1",10),                // 追加：day_num（手動）
+      sessionId,"block1", $("#cond").value,
+      "","","","","","","","","","", "","","","",
+      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "esm",val,
+      "","", ALGO_VERSION
     ]);
-    log(`🗳️ ESM: ${val}`); esmModal.style.display="none"; scheduleNextESM(); saveState();
+    log(`🗳️ ESM: ${val}`); $("#esmModal").style.display="none"; scheduleNextESM(); saveState();
   });
 });
 
-// ===== ベースライン（EWMA）=====
+/* =========== ベースライン（EWMA） =========== */
 let prevHR=null, prevRMSSD=null;
 let hr_base=70, sd_hr=8, rmssd_base=0.04, sd_rmssd=0.018;
 const EWMA=0.05;
 
-// ===== CSVヘッダ =====
+/* =========== CSVヘッダ（JST列） =========== */
 function makeHeader(){
-  csvRows=[[ "timestamp","datetime","pid","day","day_iso","session_id","block","condition",
+  csvRows=[[ "timestamp","datetime_jst","pid","day_local","day_iso_jst","day_num",
+    "session_id","block","condition",
     "hr","rmssd","rmssd_ms","z_hr","z_rmssd","d_hr","d_rmssd",
     "roll_std_h","roll_std_rr","emotion",
     "track_id","track_name","artists","context_uri",
     "hr_base","rmssd_base","sd_hr","sd_rmssd",
-    "is_playing","exercise",
-    "valid_for_rank",
+    "is_playing","exercise","valid_for_rank",
     "valid_for_rank_none","valid_for_rank_music","valid_for_rank_both",
     "mood","relax","note","event","esm",
-    "session_minutes_valid","reason_invalid",
-    "algo_version"
+    "session_minutes_valid","reason_invalid","algo_version"
   ]];
 }
 
-// ===== 1分刻み処理 =====
+/* =========== 1分刻み処理 =========== */
 async function oneTick(){
-  const dayStr=new Date().toLocaleDateString("ja-JP"), dayISO=isoDay();
-  const pid=(document.getElementById("pid").value||"").trim()||"pid";
-  const condition=condSel.value;
-  const goal=parseInt(goalSel.value||"120",10);
+  const pid=($("#pid").value||"").trim()||"pid";
+  const condition=$("#cond").value;
+  const goal=parseInt($("#goalMin").value||"120",10);
+  const dayNum=parseInt($("#dayNum").value||"1",10);
 
   const rmssd=calcRMSSD(rrList.slice(-10));
   const rmssd_ms = rmssd!=null ? Math.round(rmssd*1000) : "";
-  const z_hr     = (hr!=null)     ? (hr-hr_base)/sd_hr         : "";
-  const z_rmssd  = (rmssd!=null)  ? (rmssd-rmssd_base)/sd_rmssd: "";
-  const d_hr     = (prevHR!=null && hr!=null)       ? (hr-prevHR)           : "";
-  const d_rmssd  = (prevRMSSD!=null && rmssd!=null) ? (rmssd-prevRMSSD)     : "";
+  const z_hr     = (hr!=null) ? (hr-hr_base)/sd_hr : "";
+  const z_rmssd  = (rmssd!=null) ? (rmssd-rmssd_base)/sd_rmssd : "";
+  const d_hr     = (prevHR!=null && hr!=null) ? (hr-prevHR) : "";
+  const d_rmssd  = (prevRMSSD!=null && rmssd!=null) ? (rmssd-prevRMSSD) : "";
   const emotion  = decideEmotion(hr, rmssd, z_hr, z_rmssd);
 
-  let playing=false, track={track_id:"",track_name:"",artists:"",context_uri:"",is_playing:false};
-  try{ const info=extractTrackInfo(await getCurrentPlaying()); playing=!!info.is_playing; track=info; }catch{}
+  let playing=false, info={track_id:"",track_name:"",artists:"",context_uri:"",is_playing:false};
+  try{ info=extractTrackInfo(await getCurrentPlaying()); playing=!!info.is_playing; }catch{}
 
   const exercise = (hr!=null && hr_base!=null && hr >= hr_base+25) ? 1 : 0;
 
@@ -442,256 +455,176 @@ async function oneTick(){
   const valid_for_rank_music = (condition==="MUSIC" && playing && !exercise) ? 1 : 0;
   const valid_for_rank_both  = (condition==="BOTH"  && playing && !exercise) ? 1 : 0;
 
-  const gotHR = (hr!=null);
+  const gotHR=(hr!=null);
   if(gotHR){
-    if(condition==="MUSIC" || condition==="BOTH"){
-      if(playing) { validMin++; playMin++; }
-    }else{
-      validMin++;
-    }
+    if(condition==="MUSIC"||condition==="BOTH"){ if(playing){ validMin++; playMin++; } }
+    else{ validMin++; }
   }
 
-  // keep-alive：MUSIC/BOTHで2分再生が落ちていたら静かに起動
-  if((condition==="MUSIC" || condition==="BOTH") && !exercise){
+  // keep-alive
+  if((condition==="MUSIC"||condition==="BOTH") && !exercise){
     if(playing) noPlayStreak=0;
-    else {
-      noPlayStreak++;
-      if(noPlayStreak>=2){ log("🎧 keep-alive: 再生が止まっているため起動を試行"); await playPlaylist(PLAYLIST_CALM_MAINTAIN); noPlayStreak=0; }
-    }
+    else { noPlayStreak++; if(noPlayStreak>=2){ log("🎧 keep-alive: 再生起動を試行"); await playPlaylist(PLAYLIST_CALM_MAINTAIN); noPlayStreak=0; } }
   }
 
   updateGoalView(goal);
 
-  if((condition==="MUSIC" || condition==="BOTH") && !exercise){
-    const targetKey = emotion==="tension" ? "tension" : (emotion==="calm" ? "calm" : (emotion==="depress" ? "depress" : null));
-    if(targetKey) scheduleSwitchIfNeeded(targetKey);
+  if((condition==="MUSIC"||condition==="BOTH") && !exercise){
+    const key = emotion==="tension"?"tension":(emotion==="calm"?"calm":(emotion==="depress"?"depress":null));
+    if(key) scheduleSwitchIfNeeded(key);
   }
 
   csvRows.push([
-    Date.now(), isoNow(), pid, dayStr, dayISO, sessionId, "block1", condition,
+    Date.now(), datetimeStrJST(), pid,
+    new Date().toLocaleDateString("ja-JP"), dayIsoJST(), dayNum,
+    sessionId,"block1", condition,
     hr??"", rmssd??"", rmssd_ms, z_hr===""?"":z_hr, z_rmssd===""?"":z_rmssd, d_hr, d_rmssd,
     "", "", emotion,
-    track.track_id, track.track_name, track.artists, track.context_uri,
+    info.track_id, info.track_name, info.artists, info.context_uri,
     hr_base, rmssd_base, sd_hr, sd_rmssd,
-    playing?1:0, exercise,
-    valid_for_rank,
+    playing?1:0, exercise, valid_for_rank,
     valid_for_rank_none, valid_for_rank_music, valid_for_rank_both,
     "", "", "", "", "",
-    "", "",
-    ALGO_VERSION
+    "", "", ALGO_VERSION
   ]);
 
   // ベースライン更新（ほぼ中立）
   if(rmssd!=null && hr!=null && z_hr!=="" && z_rmssd!=="" && Math.abs(z_hr)<0.5 && z_rmssd>-0.3){
-    hr_base    = (1-EWMA)*hr_base    + EWMA*hr;
-    rmssd_base = (1-EWMA)*rmssd_base + EWMA*rmssd;
-    sd_hr      = Math.max(SD_HR_FLOOR,    (1-EWMA)*sd_hr    + EWMA*Math.abs(hr-hr_base));
-    sd_rmssd   = Math.max(SD_RMSSD_FLOOR, (1-EWMA)*sd_rmssd + EWMA*Math.abs(rmssd-rmssd_base));
+    hr_base=(1-EWMA)*hr_base + EWMA*hr;
+    rmssd_base=(1-EWMA)*rmssd_base + EWMA*rmssd;
+    sd_hr=Math.max(SD_HR_FLOOR, (1-EWMA)*sd_hr + EWMA*Math.abs(hr-hr_base));
+    sd_rmssd=Math.max(SD_RMSSD_FLOOR, (1-EWMA)*sd_rmssd + EWMA*Math.abs(rmssd-rmssd_base));
   }
 
   prevHR=hr; prevRMSSD=rmssd;
 
-  // ユーザー当日合計のプレビュー更新
-  try{
-    const u=ensureUser(pid); const d=u.days[dayISO]||ensureUserDay(u, dayISO); d.total_valid=validMin; saveUser(u); setDayBadge(u, dayISO);
-  }catch{}
+  // 選択Dayへ積算保存
+  try{ const u=ensureUser(pid); const d=ensureDay(u, dayNum); d.total_valid=validMin; saveUser(u); setDayBadgeNum(dayNum);}catch{}
 
-  // デバッグ行（原因切り分け）
-  log(`[tick] gotHR=${gotHR?1:0} playing=${playing?1:0} ex=${exercise} cond=${condition} validMin=${validMin}`);
-
-  // 自動終了
-  const autoStop=document.getElementById("autoStop").checked;
-  if(autoStop){
-    if(validMin>=goal){ log("⏱ 目標到達のため自動終了"); stopSession(); return; }
-    if(isPastCutoff()){ log("🌙 23:00を過ぎたため自動終了"); stopSession(); return; }
-  }
+  log(`[tick JST] HR=${hr??"-"} playing=${playing?1:0} ex=${exercise} emotion=${emotion} validMin=${validMin}`);
+  // 自動終了：目標到達のみ
+  if($("#autoStop").checked && validMin>=goal){ log("⏱ 目標到達→自動終了"); stopSession(); return; }
 
   saveState();
 }
-function startTicking(){
-  if(timer) clearInterval(timer); // 二重起動防止
-  timer=setInterval(oneTick, 60*1000);
-}
+function startTicking(){ if(timer) clearInterval(timer); timer=setInterval(oneTick, 60*1000); }
 
-// ===== UI / セッション管理 =====
+/* =========== UI/セッション管理 =========== */
 function updateGoalView(goal){
-  const weekly=document.getElementById("weeklyMode").checked;
+  const weekly=$("#weeklyMode").checked;
   if(!weekly){
-    const g=goal?goal:parseInt(goalSel.value||"120",10);
-    const ok=(validMin>=g);
-    goalView.textContent=`進捗: ${validMin} / ${g}分`+(ok?" ✅":"");
-    goalView.classList.toggle("goalok", ok);
+    const g=goal?goal:parseInt($("#goalMin").value||"120",10);
+    $("#goalText").textContent=`進捗: ${validMin} / ${g}分`;
+    const p=Math.max(0,Math.min(100, (validMin/g)*100 ));
+    $("#goalBar").style.width=p+"%";
+    $("#goalBar").style.background= (validMin>=g) ? "linear-gradient(90deg,#16a34a,#22c55e)" : "linear-gradient(90deg,#3870ff,#50e3c2)";
   }else{
-    const wkKey=`wk_${new Date().getFullYear()}_${toWeekKey()}`;
-    const got=parseInt((loadUser((document.getElementById("pid").value||"pid")).weekly[toWeekKey()]||0),10);
-    document.getElementById("weeklyProg").textContent=`今週の取得: ${got} 分`;
-    goalView.textContent=`今セッション: ${validMin} 分`;
-    goalView.classList.remove("goalok");
+    const pid=($("#pid").value||"pid").trim(); const u=ensureUser(pid);
+    const weekKey = new Date().toISOString().slice(0,10); // 表示のみ簡易
+    const got=(u.weekly[weekKey]||0);
+    $("#weeklyProg").textContent=`${got} 分`;
+    $("#goalText").textContent=`今セッション: ${validMin} 分`;
+    $("#goalBar").style.width="0%";
   }
 }
-document.getElementById("weeklyMode").addEventListener("change", (e)=>{
-  document.getElementById("weeklyBox").style.display=e.target.checked?"flex":"none";
-  updateGoalView();
-});
+$("#weeklyMode").addEventListener("change",(e)=>{ $("#weeklyBox").style.display=e.target.checked?"flex":"none"; updateGoalView(); });
 
 function makeButtonsState(running){
-  document.getElementById("btnStart").disabled=running;
-  document.getElementById("btnStop").disabled=!running;
-  document.getElementById("btnPause").disabled=!running;
-  document.getElementById("btnResume").disabled=true;
-  btnCsv.disabled=running;
+  $("#btnStart").disabled=running; $("#btnStop").disabled=!running;
+  $("#btnPause").disabled=!running; $("#btnResume").disabled=true;
+  $("#btnCsv").disabled=running;
 }
-
 function makeHeaderAndReset(){
   makeHeader();
   sessionId=Math.random().toString(36).slice(2,10);
   validMin=0; playMin=0; anyBLE=false; bleDropped=false; lastHadBLE=false;
   currentEmotionKey=null; waitingSwitch=false; noPlayStreak=0;
-  votes={tension:[],calm:[],depress:[]};
-  lastEmotion="unknown"; lastNonUnknown="unknown"; lastNonUnknownAt=0;
+  votes={tension:[],calm:[],depress:[]}; lastEmotion="unknown"; lastNonUnknown="unknown"; lastNonUnknownAt=0;
   startedAtMs=Date.now();
 }
-
 function startSession(){
-  // ユーザーDay確定
-  const pid=(document.getElementById("pid").value||"pid").trim();
-  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
+  const pid=($("#pid").value||"pid").trim();
+  const dayNum=parseInt($("#dayNum").value||"1",10);
+  const u=ensureUser(pid); ensureDay(u, dayNum); setDayBadgeNum(dayNum);
 
-  makeButtonsState(true);
-  makeHeaderAndReset();
-  updateGoalView();
-  log("セッション開始: "+sessionId);
+  makeButtonsState(true); makeHeaderAndReset(); updateGoalView(); log("▶ セッション開始: "+sessionId);
   scheduleNextESM();
 
-  // MUSIC/BOTH は最初に静かに起動（再生端末を起こす）
-  if(condSel.value==="MUSIC" || condSel.value==="BOTH"){ playPlaylist(PLAYLIST_CALM_MAINTAIN); }
-
-  startTicking();
-  saveState();
+  if($("#cond").value==="MUSIC"||$("#cond").value==="BOTH"){ playPlaylist(PLAYLIST_CALM_MAINTAIN); }
+  startTicking(); saveState();
 }
-
 function stopSession(){
-  clearInterval(timer); timer=null;
-  clearTimeout(esmTimer); esmTimer=null;
+  clearInterval(timer); timer=null; clearTimeout(esmTimer); esmTimer=null; esmNext.textContent="ESM: 未予定";
   makeButtonsState(false);
 
-  const condition=condSel.value;
-  let reasons=[];
-  if(validMin<60) reasons.push("<60min");
+  const condition=$("#cond").value, dayNum=parseInt($("#dayNum").value||"1",10);
+  let reasons=[]; if(validMin<60) reasons.push("<60min");
   if((condition==="MUSIC"||condition==="BOTH") && playMin<30) reasons.push("playing<30");
   if(bleDropped) reasons.push("ble_drop");
   const reason_invalid=reasons.join("+")||"";
 
   if(csvRows.length>1){
     const last=csvRows[csvRows.length-1];
-    // 末尾から3番目= session_minutes_valid, 2番目= reason_invalid, 1番目=algo_version
     last[last.length-3]=String(validMin);
     last[last.length-2]=reason_invalid;
   }else{
-    csvRows.push([Date.now(), isoNow(), (document.getElementById("pid").value||"pid"),
-      new Date().toLocaleDateString("ja-JP"), isoDay(), sessionId, "block1", condition,
+    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
+      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), dayNum,
+      sessionId,"block1", $("#cond").value,
       "","","","","","","","","","", "","","","",
-      hr_base, rmssd_base, sd_hr, sd_rmssd, 0,0, 0,0,0,0, "","","", "end","",
+      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "end","",
       String(validMin), reason_invalid, ALGO_VERSION
     ]);
   }
 
-  // ユーザー日/週に確定反映
   try{
-    const pid=(document.getElementById("pid").value||"pid").trim();
-    const u=ensureUser(pid); const iso=isoDay(); const day=ensureUserDay(u, iso);
-    day.total_valid += validMin;
-    day.sessions.push({session_id, condition, minutes:validMin, play_minutes:playMin, reason_invalid,
-      started_at:new Date(startedAtMs).toISOString(), ended_at:new Date().toISOString()});
-    u.total_valid += validMin;
-    bumpWeekly(u, validMin, new Date());
-    saveUser(u); setDayBadge(u, iso);
+    const pid=($("#pid").value||"pid").trim(); const u=ensureUser(pid); const d=ensureDay(u, dayNum);
+    d.total_valid += validMin;
+    d.sessions.push({session_id:sessionId,condition,day_num:dayNum,minutes:validMin,play_minutes:playMin,reason_invalid,
+                     started_at_jst:datetimeStrJST(new Date(startedAtMs)), ended_at_jst:datetimeStrJST()});
+    u.total_valid += validMin; saveUser(u); setDayBadgeNum(dayNum);
   }catch{}
 
   clearSavedState();
-  log(`セッション終了（有効分=${validMin}分, 再生分=${playMin}分, 理由=${reason_invalid||"なし"}）`);
+  log(`■ セッション終了（有効分=${validMin}分, 再生分=${playMin}分, 理由=${reason_invalid||"なし"}）`);
 }
 
-document.getElementById("btnPause").onclick=()=>{
-  if(!timer) return;
-  paused=true;
-  clearInterval(timer); timer=null;
-  clearTimeout(esmTimer); esmTimer=null;
-  document.getElementById("btnPause").disabled=true;
-  document.getElementById("btnResume").disabled=false;
-  log("⏸ 一時停止（CSVはまだ開いたまま）");
-  saveState();
-};
-document.getElementById("btnResume").onclick=()=>{
-  if(timer) return;
-  paused=false;
-  scheduleNextESM();
-  startTicking(); // ヘッダは増やさない（継続）
-  document.getElementById("btnPause").disabled=false;
-  document.getElementById("btnResume").disabled=true;
-  log("▶ 再開");
-  saveState();
-};
-
-// ===== アンケ =====
-document.getElementById("btnNote").onclick=()=>{
-  const mood=document.getElementById("mood").value||"";
-  const relax=document.getElementById("relax").value||"";
-  const notes=document.getElementById("notes").value||"";
-  if(csvRows.length>1){
-    const idxMood=csvRows[0].indexOf("mood"), idxRelax=csvRows[0].indexOf("relax"), idxNote=csvRows[0].indexOf("note");
-    const last=csvRows[csvRows.length-1]; last[idxMood]=mood; last[idxRelax]=relax; last[idxNote]=notes;
-  }
-  log("アンケ追加"); saveState();
-};
-
-// ===== CSV保存 =====
-btnCsv.onclick=()=>{
-  const lines=csvRows.map(r=>r.map(csvEscape).join(",")).join("\n");
+/* =========== アンケ/CSV =========== */
+$("#btnNote").onclick=()=>{ const mood=$("#mood").value||"", relax=$("#relax").value||"", notes=$("#notes").value||"";
+  if(csvRows.length>1){ const im=csvRows[0].indexOf("mood"), ir=csvRows[0].indexOf("relax"), inx=csvRows[0].indexOf("note");
+    const last=csvRows[csvRows.length-1]; last[im]=mood; last[ir]=relax; last[inx]=notes; }
+  log("📝 アンケ追加"); saveState(); };
+$("#btnCsv").onclick=()=>{ const lines=csvRows.map(r=>r.map(csvEscape).join(",")).join("\n");
   const blob=new Blob([lines],{type:"text/csv"});
-  const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`emotion_log_${isoDay()}_${sessionId}.csv`});
-  a.click(); URL.revokeObjectURL(a.href);
-};
+  const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`emotion_log_${dayIsoJST()}_${sessionId}.csv`});
+  a.click(); URL.revokeObjectURL(a.href); };
 
-// ===== UIイベント =====
-document.getElementById("btnBle").onclick=connectBLE;
-document.getElementById("btnSp").onclick=loginSpotify;
-document.getElementById("btnStart").onclick=startSession;
-document.getElementById("btnStop").onclick=stopSession;
-document.getElementById("btnClear").onclick=clearLog;
+/* =========== イベント/復元 =========== */
+$("#btnBle").onclick=connectBLE;
+$("#btnSp").onclick=loginSpotify;
+$("#btnStart").onclick=startSession;
+$("#btnStop").onclick=stopSession;
+$("#btnClear").onclick=clearLog;
 
-// pid変更でDay表示更新
-document.getElementById("pid").addEventListener("change",()=>{
-  const pid=(document.getElementById("pid").value||"pid").trim();
-  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
-});
+$("#pid").addEventListener("change",()=>{ const pid=($("#pid").value||"pid").trim(); const u=ensureUser(pid); ensureDay(u, parseInt($("#dayNum").value||"1",10)); });
 
-// 既に code=? で戻ってきたら自動交換
+$("#dayMinus").onclick=()=>{ const n=Math.max(1, parseInt($("#dayNum").value||"1",10)-1); setDayBadgeNum(n); saveState(); };
+$("#dayPlus").onclick =()=>{ const n=parseInt($("#dayNum").value||"1",10)+1; setDayBadgeNum(n); saveState(); };
+
+$("#btnPlayCalm").onclick=()=>playPlaylist(PLAYLIST_CALM_MAINTAIN);
+$("#btnPlayTen").onclick =()=>playPlaylist(PLAYLIST_TENSION_TO_CALM);
+$("#btnPlayDep").onclick =()=>playPlaylist(PLAYLIST_DEPRESS_TO_LIFT);
+
 if(new URLSearchParams(location.search).get("code")) loginSpotify();
-
-// 復元：当日データがあればボタン状態・ESM・タイマーも復帰
 if(loadStateIfAny()){
-  updateGoalView();
-  const pid=(document.getElementById("pid").value||"pid").trim();
-  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
-  log("🧩 前回の途中データを復元しました。");
-  // 復帰時の典型バグ対策：タイマー二重禁止・ボタン正規化
-  if(paused){
-    document.getElementById("btnStart").disabled=true;
-    document.getElementById("btnStop").disabled=true;
-    document.getElementById("btnPause").disabled=true;
-    document.getElementById("btnResume").disabled=false;
-  }else{
-    makeButtonsState(true);
-    scheduleNextESM();
-    startTicking();
-  }
+  const pid=($("#pid").value||"pid").trim(); ensureUser(pid); setDayBadgeNum(parseInt($("#dayNum").value||"1",10));
+  updateGoalView(); log("🧩 途中データを復元しました。");
+  if(paused){ $("#btnStart").disabled=true; $("#btnStop").disabled=true; $("#btnPause").disabled=true; $("#btnResume").disabled=false; }
+  else{ makeButtonsState(true); if(esmDueAt>0){ const j=nowJstObj(); j.setTime(esmDueAt); const hh=String(j.getHours()).padStart(2,"0")+":"+String(j.getMinutes()).padStart(2,"0"); esmNext.textContent=`ESM: ${hh}頃`; }
+        scheduleNextESM(); startTicking(); }
 }
-
-// 離脱警告（セッション中 or 未ダウンロードデータ）
 window.addEventListener("beforeunload",(e)=>{
-  const running = !document.getElementById("btnStop").disabled; // Stopが押せる＝走行中
-  const hasRows = csvRows && csvRows.length>1;
+  const running=!$("#btnStop").disabled, hasRows=(csvRows && csvRows.length>1);
   if(running || hasRows){ e.preventDefault(); e.returnValue=""; }
 });
 </script>
