@@ -16,7 +16,7 @@
   input,textarea,select{width:100%;padding:8px;border:1px solid #444;border-radius:10px;background:#1a1a1a;color:#eee}
   .row{display:flex;gap:10px;flex-wrap:wrap}
   .row > * { flex:1 }
-  .logbox{white-space:pre-wrap;height:180px;overflow:auto;background:#0f0f0f;color:#e8e8e8;border:1px solid #333;border-radius:8px;padding:8px;font-family:ui-monospace,Consolas,monospace}
+  .logbox{white-space:pre-wrap;height:200px;overflow:auto;background:#0f0f0f;color:#e8e8e8;border:1px solid #333;border-radius:8px;padding:8px;font-family:ui-monospace,Consolas,monospace}
   .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid #444;border-radius:999px;padding:6px 10px;background:#1a1a1a}
   .goalok{color:#27c052}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999}
@@ -52,7 +52,7 @@
         <option value="MUSIC">MUSIC（音楽のみ）</option>
         <option value="BOTH">BOTH（複合）</option>
       </select>
-      <small class="muted">※ ここは“解析用ラベル”。実際の介入ON/OFFはコード側で制御。</small>
+      <small class="muted">※ 解析用ラベル。実際の介入ON/OFFはコード側で制御。</small>
     </div>
     <div>
       <label>参加者ID（pid）</label>
@@ -67,17 +67,15 @@
       </select>
       <div id="goalView" class="muted pill" style="margin-top:6px">進捗: 0 / 120分</div>
     </div>
+    <div>
+      <label>実験日（Day）</label>
+      <div id="dayBadge" class="pill muted">Day ?</div>
+    </div>
   </div>
 
   <div class="row" style="margin-top:10px">
-    <label class="pill">
-      <input type="checkbox" id="autoStop" checked>
-      目標到達/23:00で自動終了
-    </label>
-    <label class="pill">
-      <input type="checkbox" id="weeklyMode">
-      週合計で管理する（例: 480分/週）
-    </label>
+    <label class="pill"><input type="checkbox" id="autoStop" checked> 目標到達/23:00で自動終了</label>
+    <label class="pill"><input type="checkbox" id="weeklyMode"> 週合計で管理する（例: 480分/週）</label>
   </div>
 
   <div class="row" id="weeklyBox" style="display:none;margin-top:6px">
@@ -91,7 +89,7 @@
 
 <div class="card">
   <h2>ログ</h2>
-  <pre id="log" class="logbox"></pre>
+  <pre id="log" class="logbox" aria-live="polite"></pre>
   <div class="row">
     <button id="btnCsv" disabled>CSVダウンロード</button>
     <button id="btnClear">画面ログをクリア</button>
@@ -123,132 +121,172 @@
 </div>
 
 <script>
-// ====== 設定 ======
-const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e"; // ←自分のClient ID
+// ===== 設定 =====
+const SPOTIFY_CLIENT_ID = "7838a0cf003644ae8b5f3f75b9eb534e";
 const REDIRECT_URI       = location.origin + location.pathname;
 const SCOPES = [
   "user-read-playback-state","user-modify-playback-state",
   "playlist-read-private","playlist-read-collaborative","streaming"
 ].join(" ");
-const PLAYLIST_TENSION_TO_CALM = "spotify:playlist:6lEP2HI9ecRpSoHQNRTok7"; // 緊張→鎮静
-const PLAYLIST_DEPRESS_TO_LIFT = "spotify:playlist:0TFRed2ZNnofW4uGxjytvT"; // 落ち込み→リフトアップ
-const PLAYLIST_CALM_MAINTAIN   = "spotify:playlist:2m9HoHfpO0tk5eky1fopVu"; // 鎮静維持
-const ALGO_VERSION = "v1.2"; // ログに残す
+const PLAYLIST_TENSION_TO_CALM = "spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
+const PLAYLIST_DEPRESS_TO_LIFT = "spotify:playlist:0TFRed2ZNnofW4uGxjytvT";
+const PLAYLIST_CALM_MAINTAIN   = "spotify:playlist:2m9HoHfpO0tk5eky1fopVu";
+const ALGO_VERSION = "v1.3";
 
-// ===== Zしきい値・投票・維持（研究固定） =====
+// ===== しきい値（研究固定） =====
 const ZTH = {
-  T_RMSSD_STRONG: -0.60,
-  T_RMSSD_SOFT:   -0.30,
-  T_HR_HELP:       0.20,
-  C_RMSSD_STRONG:  0.60,
-  C_RMSSD_SOFT:    0.30,
-  C_HR_HELP:       0.20,
-  D_HR_LOW:       -0.40,
-  D_RMSSD_LOW:    -0.20,
-  D_RMSSD_HIGH:    0.10
+  T_RMSSD_STRONG: -0.60, T_RMSSD_SOFT: -0.30, T_HR_HELP: 0.20,
+  C_RMSSD_STRONG:  0.60, C_RMSSD_SOFT:  0.30, C_HR_HELP:  0.20,
+  D_HR_LOW:       -0.40, D_RMSSD_LOW:  -0.20, D_RMSSD_HIGH: 0.10
 };
-const VOTE_WIN = 5, VOTE_NEED = 3, SEG_MIN_MIN = 3, WARMUP_MIN = 3;
+const VOTE_WIN=5, VOTE_NEED=3, SEG_MIN_MIN=3, WARMUP_MIN=3;
+const SD_HR_FLOOR=3.0, SD_RMSSD_FLOOR=0.015;   // 15ms
+const CUTOFF_HOUR=23;
 
-// ===== SDの下限（発散防止） =====
-const SD_HR_FLOOR = 3.0;      // bpm
-const SD_RMSSD_FLOOR = 0.015; // 秒 (=15ms)
+// ===== 便利 =====
+const logEl=document.getElementById("log");
+const bleStateEl=document.getElementById("bleState");
+const spStateEl=document.getElementById("spState");
+const btnCsv=document.getElementById("btnCsv");
+const btnClear=document.getElementById("btnClear");
+const condSel=document.getElementById("cond");
+const goalSel=document.getElementById("goalMin");
+const goalView=document.getElementById("goalView");
+const esmModal=document.getElementById("esmModal");
+const dayBadge=document.getElementById("dayBadge");
 
-// ===== 運用補助 =====
-const CUTOFF_HOUR = 23; // 23:00で自動終了
-
-// ===== 要素 =====
-const logEl = document.getElementById("log");
-const bleStateEl = document.getElementById("bleState");
-const spStateEl  = document.getElementById("spState");
-const btnCsv = document.getElementById("btnCsv");
-const btnClear = document.getElementById("btnClear");
-const condSel = document.getElementById("cond");
-const goalSel = document.getElementById("goalMin");
-const goalView = document.getElementById("goalView");
-const esmModal = document.getElementById("esmModal");
-
-// ===== 状態変数 =====
-let hr = null, rrList = [];
-let timer = null, esmTimer = null;
-let sessionId = Math.random().toString(36).slice(2,10);
-let spotifyAccessToken = null, spotifyRefreshToken = null, spotifyTokenExpAt = 0;
-let csvRows = [[]];
-let validMin = 0, playMin = 0, anyBLE = false, bleDropped = false, lastHadBLE = false;
-let currentEmotionKey = null, waitingSwitch = false;
-let votes = { tension:[], calm:[], depress:[] };
-let lastEmotion = "unknown", lastNonUnknown = "unknown", lastNonUnknownAt = 0;
-let startedAtMs = 0, paused = false;
-
-// ===== 便利関数 =====
-function pushVote(key, ok){ const a=votes[key]; a.push(ok?1:0); if(a.length>VOTE_WIN)a.shift(); return a.reduce((x,y)=>x+y,0)>=VOTE_NEED; }
 function log(s){ logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; }
-function clearLog(){ logEl.textContent = ""; }
+function clearLog(){ logEl.textContent=""; }
 function isoNow(){ return new Date().toISOString().replace("T"," ").slice(0,19); }
 function isoDay(){ return new Date().toISOString().slice(0,10); }
-function csvEscape(val){ if(val==null) return ""; const s=String(val); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
+function csvEscape(v){ if(v==null) return ""; const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
 function randomMinutes(min,max){ return Math.floor(min + Math.random()*(max-min+1)); }
-function isPastCutoff(){ const now=new Date(); return now.getHours()>=CUTOFF_HOUR; }
-function weekNumber(d=new Date()){
-  const dt=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum=dt.getUTCDay()||7; dt.setUTCDate(dt.getUTCDate()+4-dayNum);
-  const yearStart=new Date(Date.UTC(dt.getUTCFullYear(),0,1));
-  return Math.ceil((((dt-yearStart)/86400000)+1)/7);
+function isPastCutoff(){ return (new Date()).getHours() >= CUTOFF_HOUR; }
+
+// ===== ユーザー/Day保存 =====
+function dayISO(d=new Date()){ return d.toISOString().slice(0,10); }
+function toWeekKey(d=new Date()){
+  const tmp=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum=tmp.getUTCDay()||7; tmp.setUTCDate(tmp.getUTCDate()+4-dayNum);
+  const yearStart=new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
+  const w=Math.ceil((((tmp-yearStart)/86400000)+1)/7);
+  return `${tmp.getUTCFullYear()}-W${String(w).padStart(2,'0')}`;
 }
+function loadUser(pid){ try{ return JSON.parse(localStorage.getItem(`emotion_user_${pid}`))||null; }catch{ return null; } }
+function saveUser(u){ try{ localStorage.setItem(`emotion_user_${u.pid}`, JSON.stringify(u)); }catch{} }
+function ensureUser(pid){
+  let u=loadUser(pid);
+  if(!u){ u={pid, study_start_iso: dayISO(), days:{}, weekly:{}, total_valid:0, total_days:0}; saveUser(u); }
+  return u;
+}
+function ensureUserDay(u, iso){
+  if(!u.days[iso]){ u.total_days+=1; u.days[iso]={day_num:u.total_days,total_valid:0,sessions:[]}; saveUser(u); }
+  return u.days[iso];
+}
+function bumpWeekly(u, minutes, d=new Date()){ const wk=toWeekKey(d); u.weekly[wk]=(u.weekly[wk]||0)+minutes; saveUser(u); }
+function setDayBadge(u, iso){ const info=u.days[iso]; dayBadge.textContent = `Day ${info?info.day_num:"?"}`; }
 
-// ==== UI: 週管理トグル ====
-document.getElementById("weeklyMode").addEventListener("change", (e)=>{
-  document.getElementById("weeklyBox").style.display = e.target.checked ? "flex":"none";
-  updateGoalView();
-});
+// ====== 状態変数 ======
+let hr=null, rrList=[];
+let timer=null, esmTimer=null;
+let sessionId=Math.random().toString(36).slice(2,10);
+let spotifyAccessToken=null, spotifyRefreshToken=null, spotifyTokenExpAt=0;
+let csvRows=[[]];
+let validMin=0, playMin=0, anyBLE=false, bleDropped=false, lastHadBLE=false;
+let currentEmotionKey=null, waitingSwitch=false;
+let votes={tension:[],calm:[],depress:[]};
+let lastEmotion="unknown", lastNonUnknown="unknown", lastNonUnknownAt=0;
+let startedAtMs=0, paused=false, noPlayStreak=0;
 
-// ---- RMSSD（RR=秒）。外れ値0.3〜2.0sのみ採用
+// ====== AutoSave ======
+const LS_KEY="emotion_recorder_autosave_v1";
+function saveState(){
+  try{
+    const payload={
+      csvRows, sessionId, validMin, playMin, anyBLE, bleDropped, lastHadBLE,
+      currentEmotionKey, waitingSwitch, votes, lastEmotion, lastNonUnknown,
+      lastNonUnknownAt, startedAtMs, paused,
+      hr_base, rmssd_base, sd_hr, sd_rmssd,
+      pid:(document.getElementById("pid").value||"pid"), condition:condSel.value, goal:goalSel.value,
+      dayISO: isoDay(), algo: ALGO_VERSION
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(payload));
+  }catch{}
+}
+function loadStateIfAny(){
+  try{
+    const s=localStorage.getItem(LS_KEY); if(!s) return false;
+    const p=JSON.parse(s);
+    if(p.dayISO!==isoDay()) { localStorage.removeItem(LS_KEY); return false; }
+
+    csvRows=p.csvRows||[[]]; sessionId=p.sessionId||sessionId;
+    validMin=p.validMin||0; playMin=p.playMin||0; anyBLE=!!p.anyBLE;
+    bleDropped=!!p.bleDropped; lastHadBLE=!!p.lastHadBLE;
+    currentEmotionKey=p.currentEmotionKey||null; waitingSwitch=!!p.waitingSwitch;
+    votes=p.votes||{tension:[],calm:[],depress:[]};
+    // votesが肥大化していたら窓幅に丸める（復元時バグ潰し）
+    ["tension","calm","depress"].forEach(k=>{ if(votes[k].length>VOTE_WIN) votes[k]=votes[k].slice(-VOTE_WIN); });
+
+    lastEmotion=p.lastEmotion||"unknown"; lastNonUnknown=p.lastNonUnknown||"unknown";
+    lastNonUnknownAt=p.lastNonUnknownAt||0; startedAtMs=p.startedAtMs||Date.now();
+    paused=!!p.paused;
+
+    hr_base=p.hr_base??hr_base; rmssd_base=p.rmssd_base??rmssd_base;
+    sd_hr=p.sd_hr??sd_hr; sd_rmssd=p.sd_rmssd??sd_rmssd;
+
+    if(p.pid) document.getElementById("pid").value=p.pid;
+    if(p.condition) condSel.value=p.condition;
+    if(p.goal) goalSel.value=p.goal;
+    return true;
+  }catch{ return false; }
+}
+function clearSavedState(){ localStorage.removeItem(LS_KEY); }
+
+// ===== HRV（RRは秒、0.3〜2.0sのみ採用）=====
 function calcRMSSD(rrs){
-  const xs = rrs.filter(x => x>=0.3 && x<=2.0);
-  if(xs.length < 3) return null;
-  let sum=0, n=0;
-  for(let i=1;i<xs.length;i++){ const d=xs[i]-xs[i-1]; sum += d*d; n++; }
+  const xs=rrs.filter(x=>x>=0.3 && x<=2.0);
+  if(xs.length<3) return null;
+  let sum=0,n=0; for(let i=1;i<xs.length;i++){ const d=xs[i]-xs[i-1]; sum+=d*d; n++; }
   return Math.sqrt(sum/n);
 }
 
-// ============ Web Bluetooth ============
+// ===== Web Bluetooth（簡易）=====
 async function connectBLE(){
   try{
     log("BLE: デバイス選択…");
-    const dev = await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}], optionalServices:["heart_rate"]});
-    const server = await dev.gatt.connect();
-    const service = await server.getPrimaryService("heart_rate");
-    const ch = await service.getCharacteristic("heart_rate_measurement");
+    const dev=await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}], optionalServices:["heart_rate"]});
+    const server=await dev.gatt.connect();
+    const service=await server.getPrimaryService("heart_rate");
+    const ch=await service.getCharacteristic("heart_rate_measurement");
     await ch.startNotifications();
-    ch.addEventListener("characteristicvaluechanged", (e)=>{
-      const v=e.target.value;
-      const flags=v.getUint8(0), format16=(flags&0x01)!==0, hasRR=(flags&0x10)!==0;
-      hr = format16? v.getUint16(1,true) : v.getUint8(1);
-      anyBLE = true; lastHadBLE = true;
-      let idx = format16?3:2; const rrLocal=[];
+    ch.addEventListener("characteristicvaluechanged",(e)=>{
+      const v=e.target.value, flags=v.getUint8(0), f16=(flags&0x01)!==0, hasRR=(flags&0x10)!==0;
+      hr = f16? v.getUint16(1,true) : v.getUint8(1);
+      anyBLE=true; lastHadBLE=true;
+      let idx=f16?3:2; const rrLocal=[];
       if(hasRR){ while(idx+1<v.byteLength){ rrLocal.push(v.getUint16(idx,true)/1024.0); idx+=2; } }
-      if(rrLocal.length){ rrList.push(...rrLocal); if(rrList.length>60) rrList = rrList.slice(-60); }
-      bleStateEl.textContent = `接続中（HR=${hr})`;
+      if(rrLocal.length){ rrList.push(...rrLocal); if(rrList.length>60) rrList=rrList.slice(-60); }
+      bleStateEl.textContent=`接続中（HR=${hr})`;
     });
-    dev.addEventListener("gattserverdisconnected", ()=>{ bleStateEl.textContent="切断"; if(lastHadBLE) bleDropped=true; lastHadBLE=false; });
-    bleStateEl.textContent = "接続完了"; log("BLE: 接続しました");
+    dev.addEventListener("gattserverdisconnected",()=>{ bleStateEl.textContent="切断"; if(lastHadBLE) bleDropped=true; lastHadBLE=false; });
+    bleStateEl.textContent="接続完了"; log("BLE: 接続しました");
   }catch(err){ log("BLE error: "+err.message); bleStateEl.textContent="未接続"; }
 }
 
-// ============ Spotify (PKCE) ============
+// ===== Spotify（PKCE + keep-alive）=====
 function base64url(bytes){ return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
-async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const digest=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ver)); const chal=base64url(digest); sessionStorage.setItem("pkce_verifier", ver); return chal; }
+async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const dig=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ver)); const chal=base64url(dig); sessionStorage.setItem("pkce_verifier", ver); return chal; }
 async function loginSpotify(){
   const code=new URLSearchParams(location.search).get("code");
   if(!code){
     const challenge=await pkce();
-    location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({
-      client_id:SPOTIFY_CLIENT_ID,response_type:"code",redirect_uri:REDIRECT_URI,scope:SCOPES,
-      code_challenge_method:"S256",code_challenge:challenge
+    location.href="https://accounts.spotify.com/authorize?"+new URLSearchParams({
+      client_id:SPOTIFY_CLIENT_ID,response_type:"code",redirect_uri:REDIRECT_URI,scope:SCOPES,code_challenge_method:"S256",code_challenge:challenge
     });
     return;
   }
   const ver=sessionStorage.getItem("pkce_verifier");
-  const body=new URLSearchParams({grant_type:"authorization_code", code, redirect_uri:REDIRECT_URI, client_id:SPOTIFY_CLIENT_ID, code_verifier:ver});
+  const body=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:REDIRECT_URI,client_id:SPOTIFY_CLIENT_ID,code_verifier:ver});
   const r=await fetch("https://accounts.spotify.com/api/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
   const tok=await r.json();
   if(tok.access_token){
@@ -267,6 +305,21 @@ async function refreshSpotifyIfNeeded(){
 async function spRequest(method,url,body){ await refreshSpotifyIfNeeded(); if(!spotifyAccessToken) throw new Error("no token");
   return fetch(url,{method,headers:{"Authorization":"Bearer "+spotifyAccessToken,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
 }
+async function getDevices(){
+  const r=await spRequest("GET","https://api.spotify.com/v1/me/player/devices");
+  const js=await r.json().catch(()=>({devices:[]}));
+  const devs=js.devices||[];
+  log("Spotify devices: "+(devs.map(d=>`${d.name}${d.is_active?'(active)':''}`).join(", ")||"none"));
+  return devs;
+}
+async function ensureActiveDevice(){
+  const devs=await getDevices();
+  if(devs.length===0){ log("Spotify: 端末なし（アプリを開いて1曲再生→一時停止してください）"); return null; }
+  const active=devs.find(d=>d.is_active)||devs[0];
+  try{ await spRequest("PUT","https://api.spotify.com/v1/me/player",{device_ids:[active.id],play:false}); }catch(e){ log("transfer err: "+e.message); }
+  log("use device: "+active.name);
+  return active.id;
+}
 async function ensureShuffleOn(){ try{ await spRequest("PUT","https://api.spotify.com/v1/me/player/shuffle?state=true"); }catch(e){ log("shuffle err: "+e.message);} }
 async function getCurrentPlaying(){ try{ const r=await spRequest("GET","https://api.spotify.com/v1/me/player/currently-playing"); if(r.status===204) return null; return await r.json(); }catch(_){ return null; } }
 function extractTrackInfo(j){
@@ -276,44 +329,47 @@ function extractTrackInfo(j){
     return {track_id:item.id||"",track_name:item.name||"",artists,context_uri:ctx,duration_ms:item.duration_ms||0,progress_ms:j.progress_ms||0,is_playing:!!j.is_playing};
   }catch(_){ return {track_id:"",track_name:"",artists:"",context_uri:"",duration_ms:0,progress_ms:0,is_playing:false}; }
 }
-async function getDevices(){ const r=await spRequest("GET","https://api.spotify.com/v1/me/player/devices"); try{ return (await r.json()).devices||[]; }catch{ return []; } }
-async function ensureActiveDevice(){
-  const devs=await getDevices(); const active=devs.find(d=>d.is_active)||devs[0];
-  if(!active){ log("Spotify: 再生できる端末なし"); return null; }
-  await spRequest("PUT","https://api.spotify.com/v1/me/player",{device_ids:[active.id],play:false});
-  return active.id;
+async function bootAndPlay(uri){
+  const devId=await ensureActiveDevice(); if(!devId) return false;
+  let r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(devId),{context_uri:uri,position_ms:0});
+  if(!r.ok){
+    const t=await r.text(); log("play err(1): "+t.slice(0,200));
+    try{ await spRequest("POST","https://api.spotify.com/v1/me/player/next?device_id="+encodeURIComponent(devId)); }catch(_){}
+    r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(devId),{context_uri:uri,position_ms:0});
+    if(!r.ok){ log("play err(2): "+(await r.text()).slice(0,200)); return false; }
+  }
+  return true;
 }
 async function playPlaylist(uri){
   await ensureShuffleOn();
-  const devId=await ensureActiveDevice(); if(!devId){ log("play中止: デバイスなし"); return; }
-  const r=await spRequest("PUT","https://api.spotify.com/v1/me/player/play?device_id="+encodeURIComponent(devId),{context_uri:uri,position_ms:0});
-  if(!r.ok) log("play err: "+(await r.text()).slice(0,200));
+  const ok=await bootAndPlay(uri);
+  if(!ok) log("play failed: device/広告/制限の可能性");
 }
 
-// ===== プレイリスト切替：曲末のみ（5分待って来なければスキップ）
+// ===== 切替：曲末待ち→来なければ5分で諦め（途中切替せず）=====
 async function scheduleSwitchIfNeeded(targetKey){
   if(targetKey===currentEmotionKey || waitingSwitch) return;
-  waitingSwitch = true;
-  const uri = targetKey==="tension" ? PLAYLIST_TENSION_TO_CALM :
-              targetKey==="depress" ? PLAYLIST_DEPRESS_TO_LIFT : PLAYLIST_CALM_MAINTAIN;
+  waitingSwitch=true;
+  const uri=targetKey==="tension"?PLAYLIST_TENSION_TO_CALM: targetKey==="depress"?PLAYLIST_DEPRESS_TO_LIFT: PLAYLIST_CALM_MAINTAIN;
   const deadline=Date.now()+5*60*1000; let allow=false;
   while(Date.now()<deadline){
-    let info=extractTrackInfo(await getCurrentPlaying());
-    if(!info.is_playing || !info.duration_ms) break;
+    const info=extractTrackInfo(await getCurrentPlaying());
+    if(!info.is_playing||!info.duration_ms) break;
     const remain=Math.max(0, info.duration_ms-(info.progress_ms||0));
     if(remain<=3500){ allow=true; break; }
     await new Promise(r=>setTimeout(r,1500));
   }
   if(allow){ await playPlaylist(uri); currentEmotionKey=targetKey; log(`🎵 Playlist → ${targetKey}`); }
   else{ log("🎵 Switch skipped (no end-of-track within 5min)"); }
-  waitingSwitch = false;
+  waitingSwitch=false;
 }
 
-// ===== 判定（Z＋多数決＋3分維持＋序盤WARMUP）
+// ===== 判定 =====
+function pushVote(key, ok){ const arr=votes[key]; arr.push(ok?1:0); if(arr.length>VOTE_WIN) arr.shift(); return arr.reduce((a,b)=>a+b,0)>=VOTE_NEED; }
 function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
-  if (rmssd==null || z_hr==="" || z_rmssd==="") return "unknown";
-  if (Date.now()-startedAtMs >= WARMUP_MIN*60*1000){
-    if (lastNonUnknown!=="unknown" && (Date.now()-lastNonUnknownAt) < SEG_MIN_MIN*60*1000) return lastNonUnknown;
+  if(rmssd==null || z_hr==="" || z_rmssd==="") return "unknown";
+  if(Date.now()-startedAtMs >= WARMUP_MIN*60*1000){
+    if(lastNonUnknown!=="unknown" && (Date.now()-lastNonUnknownAt)<SEG_MIN_MIN*60*1000) return lastNonUnknown;
   }
   const candT = (z_rmssd<=ZTH.T_RMSSD_STRONG) || (z_rmssd<=ZTH.T_RMSSD_SOFT && z_hr>=ZTH.T_HR_HELP);
   const candC = (z_rmssd>=ZTH.C_RMSSD_STRONG) || (z_rmssd>=ZTH.C_RMSSD_SOFT && z_hr<=ZTH.C_HR_HELP);
@@ -321,10 +377,10 @@ function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   const okC=pushVote("calm",candC), okT=pushVote("tension",candT), okD=pushVote("depress",candD);
   let decided="unknown"; if(okC) decided="calm"; else if(okT) decided="tension"; else if(okD) decided="depress";
   if(decided!=="unknown" && (Date.now()-startedAtMs)>=WARMUP_MIN*60*1000){ lastNonUnknown=decided; lastNonUnknownAt=Date.now(); }
-  lastEmotion = decided; return decided;
+  lastEmotion=decided; return decided;
 }
 
-// ====== ESM ======
+// ===== ESM =====
 function scheduleNextESM(){ clearTimeout(esmTimer); const m=randomMinutes(28,34); esmTimer=setTimeout(()=>{ esmModal.style.display="flex"; }, m*60*1000); }
 esmModal.addEventListener("click",(e)=>{ if(e.target===esmModal) esmModal.style.display="none"; });
 esmModal.querySelectorAll("button[data-esm]").forEach(btn=>{
@@ -333,21 +389,21 @@ esmModal.querySelectorAll("button[data-esm]").forEach(btn=>{
     csvRows.push([ Date.now(), isoNow(), (document.getElementById("pid").value||"pid"),
       new Date().toLocaleDateString("ja-JP"), isoDay(), sessionId, "block1", condSel.value,
       "","","","","","","","","","",
-      "","","","", "","","","", 0,0, 0,0,0,0, "","","", "esm", val, "","", ALGO_VERSION
+      "","","","", "","","","", 0,0,
+      0,0,0,0, "","","", "esm", val, "","", ALGO_VERSION
     ]);
-    log(`🗳️ ESM: ${val}`); esmModal.style.display="none"; scheduleNextESM();
+    log(`🗳️ ESM: ${val}`); esmModal.style.display="none"; scheduleNextESM(); saveState();
   });
 });
 
-// ===== ベースライン（EWMA）
+// ===== ベースライン（EWMA）=====
 let prevHR=null, prevRMSSD=null;
 let hr_base=70, sd_hr=8, rmssd_base=0.04, sd_rmssd=0.018;
 const EWMA=0.05;
 
-// ===== CSVヘッダ
+// ===== CSVヘッダ =====
 function makeHeader(){
-  csvRows = [[
-    "timestamp","datetime","pid","day","day_iso","session_id","block","condition",
+  csvRows=[[ "timestamp","datetime","pid","day","day_iso","session_id","block","condition",
     "hr","rmssd","rmssd_ms","z_hr","z_rmssd","d_hr","d_rmssd",
     "roll_std_h","roll_std_rr","emotion",
     "track_id","track_name","artists","context_uri",
@@ -355,130 +411,163 @@ function makeHeader(){
     "is_playing","exercise",
     "valid_for_rank",
     "valid_for_rank_none","valid_for_rank_music","valid_for_rank_both",
-    "mood","relax","note",
-    "event","esm",
+    "mood","relax","note","event","esm",
     "session_minutes_valid","reason_invalid",
     "algo_version"
   ]];
 }
 
-// ===== 1分刻み処理（開始・再開の両方から呼ぶ）
+// ===== 1分刻み処理 =====
+async function oneTick(){
+  const dayStr=new Date().toLocaleDateString("ja-JP"), dayISO=isoDay();
+  const pid=(document.getElementById("pid").value||"").trim()||"pid";
+  const condition=condSel.value;
+  const goal=parseInt(goalSel.value||"120",10);
+
+  const rmssd=calcRMSSD(rrList.slice(-10));
+  const rmssd_ms = rmssd!=null ? Math.round(rmssd*1000) : "";
+  const z_hr     = (hr!=null)     ? (hr-hr_base)/sd_hr         : "";
+  const z_rmssd  = (rmssd!=null)  ? (rmssd-rmssd_base)/sd_rmssd: "";
+  const d_hr     = (prevHR!=null && hr!=null)       ? (hr-prevHR)           : "";
+  const d_rmssd  = (prevRMSSD!=null && rmssd!=null) ? (rmssd-prevRMSSD)     : "";
+  const emotion  = decideEmotion(hr, rmssd, z_hr, z_rmssd);
+
+  let playing=false, track={track_id:"",track_name:"",artists:"",context_uri:"",is_playing:false};
+  try{ const info=extractTrackInfo(await getCurrentPlaying()); playing=!!info.is_playing; track=info; }catch{}
+
+  const exercise = (hr!=null && hr_base!=null && hr >= hr_base+25) ? 1 : 0;
+
+  const valid_for_rank = (condition==="NONE" && playing && !exercise) ? 1 : 0;
+  const valid_for_rank_none  = (condition==="NONE"  && !exercise) ? 1 : 0;
+  const valid_for_rank_music = (condition==="MUSIC" && playing && !exercise) ? 1 : 0;
+  const valid_for_rank_both  = (condition==="BOTH"  && playing && !exercise) ? 1 : 0;
+
+  const gotHR = (hr!=null);
+  if(gotHR){
+    if(condition==="MUSIC" || condition==="BOTH"){
+      if(playing) { validMin++; playMin++; }
+    }else{
+      validMin++;
+    }
+  }
+
+  // keep-alive：MUSIC/BOTHで2分再生が落ちていたら静かに起動
+  if((condition==="MUSIC" || condition==="BOTH") && !exercise){
+    if(playing) noPlayStreak=0;
+    else {
+      noPlayStreak++;
+      if(noPlayStreak>=2){ log("🎧 keep-alive: 再生が止まっているため起動を試行"); await playPlaylist(PLAYLIST_CALM_MAINTAIN); noPlayStreak=0; }
+    }
+  }
+
+  updateGoalView(goal);
+
+  if((condition==="MUSIC" || condition==="BOTH") && !exercise){
+    const targetKey = emotion==="tension" ? "tension" : (emotion==="calm" ? "calm" : (emotion==="depress" ? "depress" : null));
+    if(targetKey) scheduleSwitchIfNeeded(targetKey);
+  }
+
+  csvRows.push([
+    Date.now(), isoNow(), pid, dayStr, dayISO, sessionId, "block1", condition,
+    hr??"", rmssd??"", rmssd_ms, z_hr===""?"":z_hr, z_rmssd===""?"":z_rmssd, d_hr, d_rmssd,
+    "", "", emotion,
+    track.track_id, track.track_name, track.artists, track.context_uri,
+    hr_base, rmssd_base, sd_hr, sd_rmssd,
+    playing?1:0, exercise,
+    valid_for_rank,
+    valid_for_rank_none, valid_for_rank_music, valid_for_rank_both,
+    "", "", "", "", "",
+    "", "",
+    ALGO_VERSION
+  ]);
+
+  // ベースライン更新（ほぼ中立）
+  if(rmssd!=null && hr!=null && z_hr!=="" && z_rmssd!=="" && Math.abs(z_hr)<0.5 && z_rmssd>-0.3){
+    hr_base    = (1-EWMA)*hr_base    + EWMA*hr;
+    rmssd_base = (1-EWMA)*rmssd_base + EWMA*rmssd;
+    sd_hr      = Math.max(SD_HR_FLOOR,    (1-EWMA)*sd_hr    + EWMA*Math.abs(hr-hr_base));
+    sd_rmssd   = Math.max(SD_RMSSD_FLOOR, (1-EWMA)*sd_rmssd + EWMA*Math.abs(rmssd-rmssd_base));
+  }
+
+  prevHR=hr; prevRMSSD=rmssd;
+
+  // ユーザー当日合計のプレビュー更新
+  try{
+    const u=ensureUser(pid); const d=u.days[dayISO]||ensureUserDay(u, dayISO); d.total_valid=validMin; saveUser(u); setDayBadge(u, dayISO);
+  }catch{}
+
+  // デバッグ行（原因切り分け）
+  log(`[tick] gotHR=${gotHR?1:0} playing=${playing?1:0} ex=${exercise} cond=${condition} validMin=${validMin}`);
+
+  // 自動終了
+  const autoStop=document.getElementById("autoStop").checked;
+  if(autoStop){
+    if(validMin>=goal){ log("⏱ 目標到達のため自動終了"); stopSession(); return; }
+    if(isPastCutoff()){ log("🌙 23:00を過ぎたため自動終了"); stopSession(); return; }
+  }
+
+  saveState();
+}
 function startTicking(){
-  timer = setInterval(async ()=>{
-    const dayStr=new Date().toLocaleDateString("ja-JP"), dayISO=isoDay();
-    const pid=(document.getElementById("pid").value||"").trim()||"pid";
-    const condition=condSel.value;
-    const goal=parseInt(goalSel.value||"120",10);
-
-    const rmssd=calcRMSSD(rrList.slice(-10));
-    const rmssd_ms = rmssd!=null ? Math.round(rmssd*1000) : "";
-    const z_hr     = (hr!=null)     ? (hr-hr_base)/sd_hr         : "";
-    const z_rmssd  = (rmssd!=null)  ? (rmssd-rmssd_base)/sd_rmssd: "";
-    const d_hr     = (prevHR!=null && hr!=null)       ? (hr-prevHR)           : "";
-    const d_rmssd  = (prevRMSSD!=null && rmssd!=null) ? (rmssd-prevRMSSD)     : "";
-    const emotion  = decideEmotion(hr, rmssd, z_hr, z_rmssd);
-
-    let playing=false, track={track_id:"",track_name:"",artists:"",context_uri:"",is_playing:false};
-    try{ const info=extractTrackInfo(await getCurrentPlaying()); playing=!!info.is_playing; track=info; }catch{}
-
-    const exercise = (hr!=null && hr_base!=null && hr >= hr_base+25) ? 1 : 0;
-
-    const valid_for_rank = (condition==="NONE" && playing && !exercise) ? 1 : 0;
-    const valid_for_rank_none  = (condition==="NONE"  && !exercise) ? 1 : 0;
-    const valid_for_rank_music = (condition==="MUSIC" && playing && !exercise) ? 1 : 0;
-    const valid_for_rank_both  = (condition==="BOTH"  && playing && !exercise) ? 1 : 0;
-
-    const gotHR = (hr!=null);
-    if(gotHR){
-      if(condition==="MUSIC" || condition==="BOTH"){
-        if(playing) validMin++, playMin++;
-      }else{
-        validMin++;
-      }
-    }
-
-    updateGoalView(goal);
-
-    if((condition==="MUSIC" || condition==="BOTH") && !exercise){
-      const targetKey = emotion==="tension" ? "tension" : (emotion==="calm" ? "calm" : (emotion==="depress" ? "depress" : null));
-      if(targetKey) scheduleSwitchIfNeeded(targetKey);
-    }
-
-    csvRows.push([
-      Date.now(), isoNow(), pid, dayStr, dayISO, sessionId, "block1", condition,
-      hr??"", rmssd??"", rmssd_ms, z_hr===""?"":z_hr, z_rmssd===""?"":z_rmssd, d_hr, d_rmssd,
-      "", "", emotion,
-      track.track_id, track.track_name, track.artists, track.context_uri,
-      hr_base, rmssd_base, sd_hr, sd_rmssd,
-      playing?1:0, exercise,
-      valid_for_rank,
-      valid_for_rank_none, valid_for_rank_music, valid_for_rank_both,
-      "", "", "",
-      "", "",
-      "", "",
-      ALGO_VERSION
-    ]);
-
-    if(rmssd!=null && hr!=null && z_hr!=="" && z_rmssd!=="" && Math.abs(z_hr)<0.5 && z_rmssd>-0.3){
-      hr_base    = (1-EWMA)*hr_base    + EWMA*hr;
-      rmssd_base = (1-EWMA)*rmssd_base + EWMA*rmssd;
-      sd_hr      = Math.max(SD_HR_FLOOR, (1-EWMA)*sd_hr      + EWMA*Math.abs(hr-hr_base));
-      sd_rmssd   = Math.max(SD_RMSSD_FLOOR, (1-EWMA)*sd_rmssd + EWMA*Math.abs(rmssd-rmssd_base));
-    }
-
-    prevHR=hr; prevRMSSD=rmssd;
-
-    // 自動終了（目標/23:00）
-    const autoStop = document.getElementById("autoStop").checked;
-    if(autoStop){
-      if(validMin >= goal){ log("⏱ 目標到達のため自動終了"); stopSession(); return; }
-      if(isPastCutoff()){   log("🌙 23:00を過ぎたため自動終了"); stopSession(); return; }
-    }
-  }, 60*1000);
+  if(timer) clearInterval(timer); // 二重起動防止
+  timer=setInterval(oneTick, 60*1000);
 }
 
-// ===== セッション開始/停止/一時停止/再開 =====
+// ===== UI / セッション管理 =====
 function updateGoalView(goal){
-  const weekly = document.getElementById("weeklyMode").checked;
+  const weekly=document.getElementById("weeklyMode").checked;
   if(!weekly){
-    const g = goal ? goal : parseInt(goalSel.value||"120",10);
-    const ok = (validMin >= g);
-    goalView.textContent = `進捗: ${validMin} / ${g}分` + (ok ? " ✅" : "");
+    const g=goal?goal:parseInt(goalSel.value||"120",10);
+    const ok=(validMin>=g);
+    goalView.textContent=`進捗: ${validMin} / ${g}分`+(ok?" ✅":"");
     goalView.classList.toggle("goalok", ok);
   }else{
-    const wkKey = `wk_${new Date().getFullYear()}_${weekNumber()}`;
-    const got = parseInt(localStorage.getItem(wkKey)||"0",10);
-    document.getElementById("weeklyProg").textContent = `今週の取得: ${got} 分`;
-    goalView.textContent = `今セッション: ${validMin} 分`;
+    const wkKey=`wk_${new Date().getFullYear()}_${toWeekKey()}`;
+    const got=parseInt((loadUser((document.getElementById("pid").value||"pid")).weekly[toWeekKey()]||0),10);
+    document.getElementById("weeklyProg").textContent=`今週の取得: ${got} 分`;
+    goalView.textContent=`今セッション: ${validMin} 分`;
     goalView.classList.remove("goalok");
   }
 }
+document.getElementById("weeklyMode").addEventListener("change", (e)=>{
+  document.getElementById("weeklyBox").style.display=e.target.checked?"flex":"none";
+  updateGoalView();
+});
 
 function makeButtonsState(running){
-  document.getElementById("btnStart").disabled = running;
-  document.getElementById("btnStop").disabled  = !running;
-  document.getElementById("btnPause").disabled = !running;
-  document.getElementById("btnResume").disabled= true;
-  btnCsv.disabled = running;
+  document.getElementById("btnStart").disabled=running;
+  document.getElementById("btnStop").disabled=!running;
+  document.getElementById("btnPause").disabled=!running;
+  document.getElementById("btnResume").disabled=true;
+  btnCsv.disabled=running;
 }
 
 function makeHeaderAndReset(){
   makeHeader();
-  sessionId = Math.random().toString(36).slice(2,10);
+  sessionId=Math.random().toString(36).slice(2,10);
   validMin=0; playMin=0; anyBLE=false; bleDropped=false; lastHadBLE=false;
-  currentEmotionKey=null; waitingSwitch=false;
+  currentEmotionKey=null; waitingSwitch=false; noPlayStreak=0;
   votes={tension:[],calm:[],depress:[]};
   lastEmotion="unknown"; lastNonUnknown="unknown"; lastNonUnknownAt=0;
   startedAtMs=Date.now();
 }
 
 function startSession(){
+  // ユーザーDay確定
+  const pid=(document.getElementById("pid").value||"pid").trim();
+  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
+
   makeButtonsState(true);
   makeHeaderAndReset();
   updateGoalView();
   log("セッション開始: "+sessionId);
   scheduleNextESM();
+
+  // MUSIC/BOTH は最初に静かに起動（再生端末を起こす）
+  if(condSel.value==="MUSIC" || condSel.value==="BOTH"){ playPlaylist(PLAYLIST_CALM_MAINTAIN); }
+
   startTicking();
+  saveState();
 }
 
 function stopSession(){
@@ -491,87 +580,120 @@ function stopSession(){
   if(validMin<60) reasons.push("<60min");
   if((condition==="MUSIC"||condition==="BOTH") && playMin<30) reasons.push("playing<30");
   if(bleDropped) reasons.push("ble_drop");
-  const reason_invalid = reasons.join("+") || "";
+  const reason_invalid=reasons.join("+")||"";
 
   if(csvRows.length>1){
     const last=csvRows[csvRows.length-1];
-    last[last.length-3] = validMin.toString();   // session_minutes_valid
-    last[last.length-2] = reason_invalid;        // reason_invalid
+    // 末尾から3番目= session_minutes_valid, 2番目= reason_invalid, 1番目=algo_version
+    last[last.length-3]=String(validMin);
+    last[last.length-2]=reason_invalid;
   }else{
     csvRows.push([Date.now(), isoNow(), (document.getElementById("pid").value||"pid"),
       new Date().toLocaleDateString("ja-JP"), isoDay(), sessionId, "block1", condition,
       "","","","","","","","","","", "","","","",
-      hr_base, rmssd_base, sd_hr, sd_rmssd,
-      0,0, 0,0,0,0, "","","", "end","", validMin.toString(), reason_invalid, ALGO_VERSION
+      hr_base, rmssd_base, sd_hr, sd_rmssd, 0,0, 0,0,0,0, "","","", "end","",
+      String(validMin), reason_invalid, ALGO_VERSION
     ]);
   }
 
-  // 週合計に加算（週管理ONのとき）
-  if(document.getElementById("weeklyMode").checked){
-    const wkKey = `wk_${new Date().getFullYear()}_${weekNumber()}`;
-    const got = parseInt(localStorage.getItem(wkKey)||"0",10);
-    localStorage.setItem(wkKey, String(got + validMin));
-    document.getElementById("weeklyProg").textContent = `今週の取得: ${got + validMin} 分`;
-  }
+  // ユーザー日/週に確定反映
+  try{
+    const pid=(document.getElementById("pid").value||"pid").trim();
+    const u=ensureUser(pid); const iso=isoDay(); const day=ensureUserDay(u, iso);
+    day.total_valid += validMin;
+    day.sessions.push({session_id, condition, minutes:validMin, play_minutes:playMin, reason_invalid,
+      started_at:new Date(startedAtMs).toISOString(), ended_at:new Date().toISOString()});
+    u.total_valid += validMin;
+    bumpWeekly(u, validMin, new Date());
+    saveUser(u); setDayBadge(u, iso);
+  }catch{}
 
+  clearSavedState();
   log(`セッション終了（有効分=${validMin}分, 再生分=${playMin}分, 理由=${reason_invalid||"なし"}）`);
 }
 
-document.getElementById("btnPause").onclick = ()=>{
+document.getElementById("btnPause").onclick=()=>{
   if(!timer) return;
-  paused = true;
+  paused=true;
   clearInterval(timer); timer=null;
   clearTimeout(esmTimer); esmTimer=null;
-  document.getElementById("btnPause").disabled = true;
-  document.getElementById("btnResume").disabled = false;
+  document.getElementById("btnPause").disabled=true;
+  document.getElementById("btnResume").disabled=false;
   log("⏸ 一時停止（CSVはまだ開いたまま）");
+  saveState();
 };
-
-document.getElementById("btnResume").onclick = ()=>{
+document.getElementById("btnResume").onclick=()=>{
   if(timer) return;
-  paused = false;
+  paused=false;
   scheduleNextESM();
-  startTicking();
-  document.getElementById("btnPause").disabled = false;
-  document.getElementById("btnResume").disabled = true;
+  startTicking(); // ヘッダは増やさない（継続）
+  document.getElementById("btnPause").disabled=false;
+  document.getElementById("btnResume").disabled=true;
   log("▶ 再開");
+  saveState();
 };
 
-// ===== アンケ（直近行へ追記）
-document.getElementById("btnNote").onclick = ()=>{
+// ===== アンケ =====
+document.getElementById("btnNote").onclick=()=>{
   const mood=document.getElementById("mood").value||"";
   const relax=document.getElementById("relax").value||"";
   const notes=document.getElementById("notes").value||"";
   if(csvRows.length>1){
-    const idxMood  = csvRows[0].indexOf("mood");
-    const idxRelax = csvRows[0].indexOf("relax");
-    const idxNote  = csvRows[0].indexOf("note");
-    const last = csvRows[csvRows.length-1];
-    last[idxMood]=mood; last[idxRelax]=relax; last[idxNote]=notes;
+    const idxMood=csvRows[0].indexOf("mood"), idxRelax=csvRows[0].indexOf("relax"), idxNote=csvRows[0].indexOf("note");
+    const last=csvRows[csvRows.length-1]; last[idxMood]=mood; last[idxRelax]=relax; last[idxNote]=notes;
   }
-  log("アンケ追加");
+  log("アンケ追加"); saveState();
 };
 
-// ===== CSV保存（エスケープ対応）
-btnCsv.onclick = ()=>{
-  const lines = csvRows.map(r => r.map(csvEscape).join(",")).join("\n");
-  const blob  = new Blob([lines], {type:"text/csv"});
-  const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(blob),
-    download: `emotion_log_${isoDay()}_${sessionId}.csv`
-  });
+// ===== CSV保存 =====
+btnCsv.onclick=()=>{
+  const lines=csvRows.map(r=>r.map(csvEscape).join(",")).join("\n");
+  const blob=new Blob([lines],{type:"text/csv"});
+  const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`emotion_log_${isoDay()}_${sessionId}.csv`});
   a.click(); URL.revokeObjectURL(a.href);
 };
 
-// ===== UIイベント
-document.getElementById("btnBle").onclick = connectBLE;
-document.getElementById("btnSp").onclick = loginSpotify;
-document.getElementById("btnStart").onclick = startSession;
-document.getElementById("btnStop").onclick = stopSession;
-document.getElementById("btnClear").onclick = clearLog;
+// ===== UIイベント =====
+document.getElementById("btnBle").onclick=connectBLE;
+document.getElementById("btnSp").onclick=loginSpotify;
+document.getElementById("btnStart").onclick=startSession;
+document.getElementById("btnStop").onclick=stopSession;
+document.getElementById("btnClear").onclick=clearLog;
+
+// pid変更でDay表示更新
+document.getElementById("pid").addEventListener("change",()=>{
+  const pid=(document.getElementById("pid").value||"pid").trim();
+  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
+});
 
 // 既に code=? で戻ってきたら自動交換
 if(new URLSearchParams(location.search).get("code")) loginSpotify();
+
+// 復元：当日データがあればボタン状態・ESM・タイマーも復帰
+if(loadStateIfAny()){
+  updateGoalView();
+  const pid=(document.getElementById("pid").value||"pid").trim();
+  const u=ensureUser(pid); ensureUserDay(u, isoDay()); setDayBadge(u, isoDay());
+  log("🧩 前回の途中データを復元しました。");
+  // 復帰時の典型バグ対策：タイマー二重禁止・ボタン正規化
+  if(paused){
+    document.getElementById("btnStart").disabled=true;
+    document.getElementById("btnStop").disabled=true;
+    document.getElementById("btnPause").disabled=true;
+    document.getElementById("btnResume").disabled=false;
+  }else{
+    makeButtonsState(true);
+    scheduleNextESM();
+    startTicking();
+  }
+}
+
+// 離脱警告（セッション中 or 未ダウンロードデータ）
+window.addEventListener("beforeunload",(e)=>{
+  const running = !document.getElementById("btnStop").disabled; // Stopが押せる＝走行中
+  const hasRows = csvRows && csvRows.length>1;
+  if(running || hasRows){ e.preventDefault(); e.returnValue=""; }
+});
 </script>
 </body>
 </html>
