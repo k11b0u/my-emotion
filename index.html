@@ -18,11 +18,11 @@
   .toprow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 14px}
   .chips{display:flex;gap:8px;flex-wrap:wrap}
   .chip{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);font-size:13px}
-  /* ——— クリック不能対策（かぶさり/巻き込み） ——— */
+  /* クリック不能対策 */
   .topbar, .wrap, .card, .row { position: relative; z-index: 1; }
-  .chips, .chip { pointer-events: none; } /* バッジはクリック不要 */
-  .modal { pointer-events: none; }        /* 非表示時はクリック拾わない */
-  .modal[style*="display: flex"] { pointer-events: auto; } /* 表示時のみ */
+  .chips, .chip { pointer-events: none; }
+  .modal { pointer-events: none; }
+  .modal[style*="display: flex"] { pointer-events: auto; }
   .grid{display:grid;gap:12px;margin-top:12px}
   @media (min-width:980px){ .grid{grid-template-columns:1.05fr .95fr} }
   .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
@@ -50,7 +50,6 @@
 </head>
 <body>
 
-<!-- Sticky Topbar -->
 <div class="topbar">
   <div class="toprow wrap">
     <div class="row" style="gap:12px;align-items:center">
@@ -75,7 +74,6 @@
 </div>
 
 <div class="wrap grid">
-  <!-- 左：設定＆進行 -->
   <div class="card">
     <div class="section-title"><h2>セッション設定</h2></div>
 
@@ -131,6 +129,16 @@
       <div class="muted tiny">音が出ない場合：Spotifyアプリで1曲再生→一時停止→この画面。</div>
     </details>
 
+    <details>
+      <summary class="muted tiny">香りテスト（SwitchBot Bot）</summary>
+      <div class="row" style="margin-top:8px">
+        <button id="btnScentTen" class="btn">緊張用Botを1回押し</button>
+        <button id="btnScentCalm" class="btn">鎮静用Botを1回押し</button>
+        <button id="btnScentDep" class="btn">落ち込み用Botを1回押し</button>
+        <button id="btnScentOff" class="btn">直近ONのBotを2回押し（OFF）</button>
+      </div>
+    </details>
+
     <div class="section-title" style="margin-top:10px"><h2>就寝前アンケート</h2></div>
     <div class="row">
       <div><label>いまの気分（0〜10）</label><input type="number" id="mood" min="0" max="10"/></div>
@@ -141,7 +149,6 @@
     <div class="row" style="margin-top:8px"><button id="btnNote" class="btn">アンケ追加</button></div>
   </div>
 
-  <!-- 右：ログ＆CSV -->
   <div class="card">
     <div class="section-title"><h2>ログ</h2></div>
     <pre id="log" class="logbox" aria-live="polite"></pre>
@@ -149,18 +156,17 @@
       <button id="btnCsv" class="btn" disabled>CSVダウンロード</button>
       <button id="btnClear" class="btn btn-ghost">画面ログをクリア</button>
     </div>
-    <div class="muted tiny" style="margin-top:6px">※ ページを閉じても自動保存されます（復元可）。</div>
+    <div class="muted tiny" style="margin-top:6px">※ページを閉じても自動保存されます（復元可）。</div>
   </div>
 </div>
 
-<!-- ESM Modal -->
 <div id="esmModal" class="modal" role="dialog" aria-modal="true" aria-label="いまの感じは？">
   <div class="box">
     <h3 style="margin:0 0 6px">いまの感じは？</h3>
     <p class="muted tiny" style="margin:0 0 10px">※ ワンタップでOK（約3秒）</p>
     <div class="row">
-      <button data-esm="tense" class="btn">緊張（高ぶり）</button>
-      <button data-esm="calm"  class="btn">鎮静（落ち着き）</button>
+      <button data-esm="tense" class="btn">緊張</button>
+      <button data-esm="calm"  class="btn">鎮静</button>
       <button data-esm="depress" class="btn">落ち込み</button>
       <button data-esm="skip" class="btn">スキップ</button>
     </div>
@@ -168,12 +174,12 @@
 </div>
 
 <script>
-/* ===== ログ/エラー表示 ===== */
+/* ------------- 基本ログ/エラー ------------- */
 function log(s){ const el=document.getElementById("log"); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; }
 window.addEventListener("error",(e)=>{log(`⚠️ JSエラー @${e.filename||''}:${e.lineno||''}:${e.colno||''}\n${e.message}\n${e?.error?.stack||""}`);});
 window.addEventListener("unhandledrejection",(e)=>{log(`⚠️ Promise未処理: ${(e?.reason?.message||e?.reason||"")}\n${e?.reason?.stack||""}`);});
 
-/* ===== 研究固定：アルゴ/しきい値 ===== */
+/* ------------- 研究固定 ------------- */
 const ALGO_VERSION="v1.4"; document.getElementById("algoBadge").textContent=ALGO_VERSION;
 const ZTH={ T_RMSSD_STRONG:-0.60, T_RMSSD_SOFT:-0.30, T_HR_HELP:0.20,
             C_RMSSD_STRONG: 0.60, C_RMSSD_SOFT: 0.30, C_HR_HELP:0.20,
@@ -181,7 +187,7 @@ const ZTH={ T_RMSSD_STRONG:-0.60, T_RMSSD_SOFT:-0.30, T_HR_HELP:0.20,
 const VOTE_WIN=5, VOTE_NEED=3, SEG_MIN_MIN=3, WARMUP_MIN=3;
 const SD_HR_FLOOR=3.0, SD_RMSSD_FLOOR=0.015;
 
-/* ===== Spotify ===== */
+/* ------------- Spotify ------------- */
 const SPOTIFY_CLIENT_ID="7838a0cf003644ae8b5f3f75b9eb534e";
 const REDIRECT_URI=location.origin+location.pathname;
 const SCOPES=["user-read-playback-state","user-modify-playback-state","playlist-read-private","playlist-read-collaborative","streaming"].join(" ");
@@ -189,7 +195,7 @@ const PLAYLIST_TENSION_TO_CALM="spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
 const PLAYLIST_DEPRESS_TO_LIFT="spotify:playlist:0TFRed2ZNnofW4uGxjytvT";
 const PLAYLIST_CALM_MAINTAIN ="spotify:playlist:2m9HoHfpO0tk5eky1fopVu";
 
-/* ===== JSTユーティリティ ===== */
+/* ------------- JSTユーティリティ ------------- */
 const $=s=>document.querySelector(s);
 const bleStateEl=$("#bleState"), spStateEl=$("#spState"), esmNext=$("#esmNext"), scentBadge=$("#scentBadge");
 function clearLog(){ $("#log").textContent=""; }
@@ -211,7 +217,7 @@ function getTimeBinJST(d=nowJstObj()){
   return "day";
 }
 
-/* ===== Day/ユーザー保存 ===== */
+/* ------------- Day/ユーザー保存 ------------- */
 function toSafeDayNum(x){ const n=parseInt(x,10); return Number.isFinite(n)&&n>=1?n:1; }
 function loadUser(pid){ try{const raw=localStorage.getItem(`emotion_user_${pid}`); if(!raw) return null; return JSON.parse(raw);}catch{return null;} }
 function saveUser(u){ try{localStorage.setItem(`emotion_user_${u.pid}`, JSON.stringify(u));}catch{} }
@@ -232,7 +238,7 @@ function ensureDay(u,dayNum){
 }
 function setDayBadgeNum(n){ const x=toSafeDayNum(n); $("#dayBadge").textContent=String(x); $("#dayNum").value=String(x); }
 
-/* ===== 旧フォーマット救済 ===== */
+/* ------------- 旧フォーマット救済 ------------- */
 (function(){
   try{ const pid=($("#pid")?.value||"pid").trim(); const raw=localStorage.getItem(`emotion_user_${pid}`);
     if(!raw) return; const obj=JSON.parse(raw);
@@ -241,7 +247,7 @@ function setDayBadgeNum(n){ const x=toSafeDayNum(n); $("#dayBadge").textContent=
     }
   }catch{} })();
 
-/* ===== 状態変数 ===== */
+/* ------------- 状態 ------------- */
 let hr=null, rrList=[];
 let timer=null, esmTimer=null, esmDueAt=0;
 let sessionId=Math.random().toString(36).slice(2,10);
@@ -254,30 +260,37 @@ let lastEmotion="unknown", lastNonUnknown="unknown", lastNonUnknownAt=0;
 let startedAtMs=0;
 let isPaused=false;
 
-/* ===== 香り（SwitchBot Cloud API直叩き：埋め込み） ===== */
+/* ------------- 香り（SwitchBot） ------------- */
 const SWITCHBOT_TOKEN = "3ca5812e6d4bc4a01e73bd603eb854734d2d97937e543cdf56fb1467ed4e0810a23cccfa70f26238d7d9f2ff310b940a";
-const SWITCHBOT_TENSION_ID = "E16A84063A18"; // 緊張系（強め香り）
-const SWITCHBOT_RELAX_ID   = "E16A8386467A"; // 鎮静系（穏やか香り）※今の運用ではCALM時はOFFのみ
-const SWITCHBOT_DEPRESS_ID = "D23534382415"; // 落ち込み系（リフトアップ香り）
+const SWITCHBOT_TENSION_ID = "E16A84063A18";
+const SWITCHBOT_RELAX_ID   = "E16A8386467A"; // calm用にON
+const SWITCHBOT_DEPRESS_ID = "D23534382415";
 
-let scentIsOn=false;                 // 直近でONにした何かがあるか
-let lastScentDeviceId="";            // 直近ON機のID
-let lastScentOpAt=0;                 // クールダウン（20s）
+let scentIsOn=false;
+let lastScentDeviceId="";
+let lastScentOpAt=0;
 const SCENT_COOLDOWN_MS = 20*1000;
 function canScentOp(){ return (Date.now()-lastScentOpAt) > SCENT_COOLDOWN_MS; }
+
+/* プロキシ経由を優先。なければ直叩き（CORSで失敗する場合あり） */
 async function switchbotPress(deviceId, times){
-  if(!deviceId) throw new Error("SwitchBot deviceIdが空です");
+  try{
+    const prox = await fetch("/api/switchbot-press",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deviceId,times})});
+    if(prox.ok) return;
+  }catch(_){}
+  // フロント直叩き（CORSの場合は失敗してログに出す）
   for(let i=0;i<times;i++){
     const r=await fetch(`https://api.switch-bot.com/v1.1/devices/${encodeURIComponent(deviceId)}/commands`,{
       method:"POST",
       headers:{ "Authorization":SWITCHBOT_TOKEN, "Content-Type":"application/json; charset=utf8"},
       body: JSON.stringify({ command:"press", parameter:"default", commandType:"command" })
     }).catch(err=>({ok:false,statusText:String(err)}));
-    if(!r || !r.ok){ log(`⚠️ SwitchBot press失敗 dev=${deviceId} (${r?.status||"noresp"}) ※CORSならプロキシ推奨`); }
+    if(!r || !r.ok){ log(`⚠️ SwitchBot press失敗 dev=${deviceId} (${r?.status||"noresp"})`); }
     await new Promise(res=>setTimeout(res, 600));
   }
 }
 async function scentOnFor(deviceId, label){
+  if(!deviceId) return;
   if(!canScentOp()) return;
   lastScentOpAt=Date.now();
   try{
@@ -313,7 +326,8 @@ async function scentOffCurrent(){
 function deviceForEmotion(emotion){
   if(emotion==="tension") return [SWITCHBOT_TENSION_ID,"tension"];
   if(emotion==="depress") return [SWITCHBOT_DEPRESS_ID,"depress"];
-  return [null,null]; // calm/unknown はOFFのみ
+  if(emotion==="calm")    return [SWITCHBOT_RELAX_ID,"calm"]; // ← calmでもON
+  return [null,null];
 }
 async function handleScentForEmotion(emotion, condition, exercise){
   if(!(condition==="SCENT"||condition==="BOTH")) return;
@@ -322,7 +336,7 @@ async function handleScentForEmotion(emotion, condition, exercise){
 
   const [targetDev, label] = deviceForEmotion(emotion);
 
-  if(targetDev){ // TENSION/DEPRESS
+  if(targetDev){ // emotionごとのBotをON
     if(scentIsOn && lastScentDeviceId && lastScentDeviceId!==targetDev){
       await scentOffCurrent();
       await scentOnFor(targetDev, label);
@@ -334,8 +348,8 @@ async function handleScentForEmotion(emotion, condition, exercise){
   }
 }
 
-/* ===== AutoSave ===== */
-const LS_KEY="emotion_recorder_autosave_v6_clickfix";
+/* ------------- AutoSave ------------- */
+const LS_KEY="emotion_recorder_autosave_v7_calmScent_nodouble";
 function saveState(){
   try{
     const payload={
@@ -372,7 +386,7 @@ function loadStateIfAny(){
 }
 function clearSavedState(){ localStorage.removeItem(LS_KEY); }
 
-/* ===== HRV ===== */
+/* ------------- HRV ------------- */
 function calcRMSSD(rrs){
   const xs=rrs.filter(x=>x>=0.3 && x<=2.0);
   if(xs.length<3) return null;
@@ -380,7 +394,7 @@ function calcRMSSD(rrs){
   return Math.sqrt(sum/n);
 }
 
-/* ===== BLE ===== */
+/* ------------- BLE ------------- */
 async function connectBLE(){
   try{
     log("🩺 BLE: デバイス選択…");
@@ -410,7 +424,7 @@ async function connectBLE(){
   }catch(err){ bleStateEl.textContent="未接続"; log("⚠️ BLE error: "+err.message); }
 }
 
-/* ===== Spotify（PKCE/起動） ===== */
+/* ------------- Spotify（PKCE） ------------- */
 function base64url(bytes){ return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const dig=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(ver)); const chal=base64url(dig); sessionStorage.setItem("pkce_verifier",ver); return chal; }
 async function loginSpotify(){
@@ -468,7 +482,8 @@ async function bootAndPlay(uri){
 }
 async function playPlaylist(uri){ const ok=await bootAndPlay(uri); if(!ok) log("⚠️ 再生できません（端末/広告/権限）"); }
 
-/* ===== プレイリスト切替（曲末待ち） ===== */
+/* ------------- 曲末待ちで切替 ------------- */
+let waitingSwitch=false, currentEmotionKey=null;
 async function scheduleSwitchIfNeeded(targetKey){
   if(targetKey===currentEmotionKey || waitingSwitch) return;
   waitingSwitch=true;
@@ -487,7 +502,7 @@ async function scheduleSwitchIfNeeded(targetKey){
   waitingSwitch=false;
 }
 
-/* ===== 判定（Z＋多数決＋3分維持） ===== */
+/* ------------- 判定 ------------- */
 function pushVote(key, ok){ const a=votes[key]; a.push(ok?1:0); if(a.length>VOTE_WIN) a.shift(); return a.reduce((x,y)=>x+y,0)>=VOTE_NEED; }
 function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   if(rmssd==null || z_hr==="" || z_rmssd==="") return "unknown";
@@ -503,7 +518,7 @@ function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   lastEmotion=decided; return decided;
 }
 
-/* ===== ESM ===== */
+/* ------------- ESM ------------- */
 function scheduleNextESM(){
   clearTimeout(esmTimer);
   const m=randomMinutes(28,34);
@@ -534,12 +549,12 @@ document.querySelectorAll("#esmModal button[data-esm]").forEach(btn=>{
   });
 });
 
-/* ===== ベースライン（EWMA） ===== */
+/* ------------- ベースライン ------------- */
 let prevHR=null, prevRMSSD=null;
 let hr_base=70, sd_hr=8, rmssd_base=0.04, sd_rmssd=0.018;
 const EWMA=0.05;
 
-/* ===== CSVヘッダ（JST＋time_bin） ===== */
+/* ------------- CSVヘッダ ------------- */
 function makeHeader(){
   csvRows=[[ "timestamp","datetime_jst","pid","day_local","day_iso_jst","day_num","time_bin",
     "session_id","block","condition",
@@ -554,7 +569,7 @@ function makeHeader(){
   ]];
 }
 
-/* ===== 1分刻み処理 ===== */
+/* ------------- 1分刻み ------------- */
 function updateGoalView(goal){
   const g=goal?goal:parseInt($("#goalMin").value||"120",10);
   $("#goalText").textContent=`進捗: ${validMin} / ${g}分`;
@@ -627,7 +642,7 @@ async function oneTick(){
       "", "", ALGO_VERSION
     ]);
 
-    // ベースライン更新（“ほぼ中立”）
+    // ベースライン更新
     if(rmssd!=null && hr!=null && z_hr!=="" && z_rmssd!=="" && Math.abs(z_hr)<0.5 && z_rmssd>-0.3){
       hr_base=(1-EWMA)*hr_base + EWMA*hr;
       rmssd_base=(1-EWMA)*rmssd_base + EWMA*rmssd;
@@ -653,16 +668,14 @@ async function oneTick(){
 }
 function startTicking(){ if(timer) clearInterval(timer); timer=setInterval(oneTick, 60*1000); }
 
-/* ===== UI/セッション管理 ===== */
-/* クリック不能の“巻き込みdisable”を防ぐ：セッション系のみ制御 */
+/* ------------- UI/セッション ------------- */
 function makeButtonsState(running){
   document.getElementById("btnStart").disabled = running;
   document.getElementById("btnPause").disabled = !running;
   document.getElementById("btnStop").disabled  = !running;
   document.getElementById("btnCsv").disabled   = running;
-  // 常に押せるよう固定
-  document.getElementById("btnBle").disabled = false;
-  document.getElementById("btnSp").disabled  = false;
+  document.getElementById("btnBle").disabled   = false;
+  document.getElementById("btnSp").disabled    = false;
   document.getElementById("dayMinus").disabled = false;
   document.getElementById("dayPlus").disabled  = false;
   document.getElementById("dayNum").disabled   = false;
@@ -674,7 +687,6 @@ function makeHeaderAndReset(){
   currentEmotionKey=null; waitingSwitch=false;
   votes={tension:[],calm:[],depress:[]}; lastEmotion="unknown"; lastNonUnknown="unknown"; lastNonUnknownAt=0;
   startedAtMs=Date.now(); isPaused=false; $("#btnPause").textContent="一時停止";
-  // 香り状態 初期化
   scentIsOn=false; lastScentDeviceId=""; lastScentOpAt=0; $("#scentBadge").textContent="off";
 }
 function startSession(){
@@ -694,8 +706,6 @@ function startSession(){
     }
 
     oneTick().catch(e=>log("oneTick初回エラー: "+(e?.message||e)));
-    validMin=0; playMin=0;
-
     startTicking();
     saveState();
   }catch(e){
@@ -749,7 +759,7 @@ function stopSession(){
   log(`■ セッション終了（有効分=${validMin}分, 再生分=${playMin}分, 理由=${reason_invalid||"なし"}）`);
 }
 
-/* ===== アンケ/CSV/ボタン ===== */
+/* ------------- アンケ/CSV ------------- */
 document.getElementById("btnNote").onclick=()=>{ const mood=$("#mood").value||"", relax=$("#relax").value||"", notes=$("#notes").value||"";
   if(csvRows.length>1){ const im=csvRows[0].indexOf("mood"), ir=csvRows[0].indexOf("relax"), inx=csvRows[0].indexOf("note");
     const last=csvRows[csvRows.length-1]; last[im]=mood; last[ir]=relax; last[inx]=notes; }
@@ -760,28 +770,45 @@ document.getElementById("btnCsv").onclick=()=>{ const lines=csvRows.map(r=>r.map
   const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`emotion_log_${dayIsoJST()}_${sessionId}.csv`});
   a.click(); URL.revokeObjectURL(a.href); };
 
-/* ===== コアハンドラ：JSが途中で落ちても再付与 ===== */
+/* ------------- ハンドラ重複を完全禁止 ------------- */
+let __handlersBound=false;
 function bindCoreHandlers(){
-  const byId = id => document.getElementById(id);
-  byId("btnBle")  && byId("btnBle").addEventListener("click", connectBLE, {once:false});
-  byId("btnSp")   && byId("btnSp").addEventListener("click", loginSpotify, {once:false});
-  byId("btnStart")&& byId("btnStart").addEventListener("click", startSession, {once:false});
-  byId("btnPause")&& byId("btnPause").addEventListener("click", ()=>{ isPaused=!isPaused; byId("btnPause").textContent=isPaused?"再開":"一時停止"; log(isPaused?"⛔ 一時停止":"▶ 再開"); saveState(); }, {once:false});
-  byId("btnStop") && byId("btnStop").addEventListener("click", stopSession, {once:false});
-  byId("btnClear")&& byId("btnClear").addEventListener("click", clearLog, {once:false});
+  if(__handlersBound) return; // ← 一度だけ
+  __handlersBound=true;
 
-  byId("dayMinus")&& byId("dayMinus").addEventListener("click", ()=>{ const n=toSafeDayNum(byId("dayNum").value)-1; setDayBadgeNum(Math.max(1,n)); saveState(); });
-  byId("dayPlus") && byId("dayPlus").addEventListener("click", ()=>{ const n=toSafeDayNum(byId("dayNum").value)+1; setDayBadgeNum(n); saveState(); });
-  byId("dayNum")  && byId("dayNum").addEventListener("change", ()=>{ setDayBadgeNum(toSafeDayNum(byId("dayNum").value)); saveState(); });
+  const byId=id=>document.getElementById(id);
 
-  byId("btnPlayCalm")&& byId("btnPlayCalm").addEventListener("click", ()=>playPlaylist(PLAYLIST_CALM_MAINTAIN));
-  byId("btnPlayTen") && byId("btnPlayTen").addEventListener("click", ()=>playPlaylist(PLAYLIST_TENSION_TO_CALM));
-  byId("btnPlayDep") && byId("btnPlayDep").addEventListener("click", ()=>playPlaylist(PLAYLIST_DEPRESS_TO_LIFT));
+  byId("btnBle").onclick = connectBLE;
+  byId("btnSp").onclick  = loginSpotify;
+  byId("btnStart").onclick = startSession;
+  byId("btnStop").onclick  = stopSession;
+  byId("btnPause").onclick = ()=>{
+    isPaused=!isPaused;
+    byId("btnPause").textContent=isPaused?"再開":"一時停止";
+    log(isPaused?"⛔ 一時停止":"▶ 再開");
+    saveState();
+  };
+  byId("btnClear").onclick = clearLog;
+
+  // Day +/- は1回ずつ
+  byId("dayMinus").onclick = ()=>{ const n=toSafeDayNum(byId("dayNum").value)-1; setDayBadgeNum(Math.max(1,n)); saveState(); };
+  byId("dayPlus").onclick  = ()=>{ const n=toSafeDayNum(byId("dayNum").value)+1; setDayBadgeNum(n); saveState(); };
+  byId("dayNum").onchange  = ()=>{ setDayBadgeNum(toSafeDayNum(byId("dayNum").value)); saveState(); };
+
+  // Spotifyプレイテスト
+  byId("btnPlayCalm").onclick = ()=>playPlaylist(PLAYLIST_CALM_MAINTAIN);
+  byId("btnPlayTen").onclick  = ()=>playPlaylist(PLAYLIST_TENSION_TO_CALM);
+  byId("btnPlayDep").onclick  = ()=>playPlaylist(PLAYLIST_DEPRESS_TO_LIFT);
+
+  // 香りテスト
+  byId("btnScentTen").onclick = async ()=>{ await scentOnFor(SWITCHBOT_TENSION_ID,"tension-test"); };
+  byId("btnScentCalm").onclick= async ()=>{ await scentOnFor(SWITCHBOT_RELAX_ID,"calm-test"); };
+  byId("btnScentDep").onclick = async ()=>{ await scentOnFor(SWITCHBOT_DEPRESS_ID,"depress-test"); };
+  byId("btnScentOff").onclick = async ()=>{ await scentOffCurrent(); };
 }
 document.addEventListener("DOMContentLoaded", bindCoreHandlers);
-setTimeout(bindCoreHandlers, 0); // 初期化後の保険
 
-/* ===== 起動時の復元 ===== */
+/* ------------- 起動時の復元 ------------- */
 if(new URLSearchParams(location.search).get("code")) loginSpotify();
 if(loadStateIfAny()){
   const pid=($("#pid").value||"pid").trim(); ensureUser(pid); setDayBadgeNum(toSafeDayNum($("#dayNum").value));
@@ -791,7 +818,7 @@ if(loadStateIfAny()){
   startTicking();
 }
 
-/* ===== 離脱警告 ===== */
+/* ------------- 離脱警告 ------------- */
 window.addEventListener("beforeunload",(e)=>{
   const running=!document.getElementById("btnStop").disabled, hasRows=(csvRows && csvRows.length > 1);
   if(running || hasRows){ e.preventDefault(); e.returnValue=""; }
