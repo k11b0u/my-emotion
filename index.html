@@ -126,38 +126,6 @@
       <div class="muted tiny">音が出ない場合：Spotifyアプリで1曲再生→一時停止→この画面。</div>
     </details>
 
-    <details open style="margin-top:10px">
-      <summary class="muted tiny">香り（SwitchBot ボット）設定</summary>
-      <div class="row" style="margin-top:8px">
-        <div>
-          <label>香りの送り先</label>
-          <select id="scentMode">
-            <option value="webhook" selected>Webhook（推奨）</option>
-            <option value="switchbot">SwitchBot Cloud API（直叩き）</option>
-          </select>
-        </div>
-        <div>
-          <label>Webhook: ON URL（1回押し）</label>
-          <input id="SCENT_WEBHOOK_ON" placeholder="https://example.com/press1"/>
-        </div>
-        <div>
-          <label>Webhook: OFF URL（2回押し）</label>
-          <input id="SCENT_WEBHOOK_OFF" placeholder="https://example.com/press2"/>
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>SwitchBot TOKEN（直叩き用・任意）</label>
-          <input id="SWITCHBOT_TOKEN" placeholder="xxxxxxxxxx"/>
-        </div>
-        <div>
-          <label>SwitchBot DEVICE_ID（直叩き用・任意）</label>
-          <input id="SWITCHBOT_DEVICE_ID" placeholder="AA:BB:CC..."/>
-        </div>
-      </div>
-      <div class="muted tiny">※ CORSの都合でブラウザ直叩きは失敗する場合があります。その場合は Webhook を使ってください。</div>
-    </details>
-
     <div class="section-title" style="margin-top:10px"><h2>就寝前アンケート</h2></div>
     <div class="row">
       <div><label>いまの気分（0〜10）</label><input type="number" id="mood" min="0" max="10"/></div>
@@ -195,12 +163,12 @@
 </div>
 
 <script>
-/* ======== ログとエラー可視化 ======== */
+/* ===== ログ/エラー表示 ===== */
 function log(s){ const el=document.getElementById("log"); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; }
 window.addEventListener("error",(e)=>{log(`⚠️ JSエラー @${e.filename||''}:${e.lineno||''}:${e.colno||''}\n${e.message}\n${e?.error?.stack||""}`);});
 window.addEventListener("unhandledrejection",(e)=>{log(`⚠️ Promise未処理: ${(e?.reason?.message||e?.reason||"")}\n${e?.reason?.stack||""}`);});
 
-/* ======== 研究固定：アルゴ/しきい値 ======== */
+/* ===== 研究固定：アルゴ/しきい値 ===== */
 const ALGO_VERSION="v1.4"; document.getElementById("algoBadge").textContent=ALGO_VERSION;
 const ZTH={ T_RMSSD_STRONG:-0.60, T_RMSSD_SOFT:-0.30, T_HR_HELP:0.20,
             C_RMSSD_STRONG: 0.60, C_RMSSD_SOFT: 0.30, C_HR_HELP:0.20,
@@ -208,7 +176,7 @@ const ZTH={ T_RMSSD_STRONG:-0.60, T_RMSSD_SOFT:-0.30, T_HR_HELP:0.20,
 const VOTE_WIN=5, VOTE_NEED=3, SEG_MIN_MIN=3, WARMUP_MIN=3;
 const SD_HR_FLOOR=3.0, SD_RMSSD_FLOOR=0.015;
 
-/* ======== Spotify / プレイリスト ======== */
+/* ===== Spotify ===== */
 const SPOTIFY_CLIENT_ID="7838a0cf003644ae8b5f3f75b9eb534e";
 const REDIRECT_URI=location.origin+location.pathname;
 const SCOPES=["user-read-playback-state","user-modify-playback-state","playlist-read-private","playlist-read-collaborative","streaming"].join(" ");
@@ -216,7 +184,7 @@ const PLAYLIST_TENSION_TO_CALM="spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
 const PLAYLIST_DEPRESS_TO_LIFT="spotify:playlist:0TFRed2ZNnofW4uGxjytvT";
 const PLAYLIST_CALM_MAINTAIN ="spotify:playlist:2m9HoHfpO0tk5eky1fopVu";
 
-/* ======== ユーティリティ（JST固定） ======== */
+/* ===== JSTユーティリティ ===== */
 const $=s=>document.querySelector(s);
 const bleStateEl=$("#bleState"), spStateEl=$("#spState"), esmNext=$("#esmNext"), scentBadge=$("#scentBadge");
 function clearLog(){ $("#log").textContent=""; }
@@ -238,7 +206,7 @@ function getTimeBinJST(d=nowJstObj()){
   return "day";
 }
 
-/* ======== Day/ユーザーデータ（堅牢化） ======== */
+/* ===== Day/ユーザー保存 ===== */
 function toSafeDayNum(x){ const n=parseInt(x,10); return Number.isFinite(n)&&n>=1?n:1; }
 function loadUser(pid){ try{const raw=localStorage.getItem(`emotion_user_${pid}`); if(!raw) return null; return JSON.parse(raw);}catch{return null;} }
 function saveUser(u){ try{localStorage.setItem(`emotion_user_${u.pid}`, JSON.stringify(u));}catch{} }
@@ -259,17 +227,16 @@ function ensureDay(u,dayNum){
 }
 function setDayBadgeNum(n){ const x=toSafeDayNum(n); $("#dayBadge").textContent=String(x); $("#dayNum").value=String(x); }
 
-/* 旧フォーマットを自動マイグレーション */
+/* ===== 旧フォーマット救済 ===== */
 (function(){
   try{ const pid=($("#pid")?.value||"pid").trim(); const raw=localStorage.getItem(`emotion_user_${pid}`);
     if(!raw) return; const obj=JSON.parse(raw);
     if(!obj||typeof obj!=="object"||Array.isArray(obj)||!obj.daysByNum||typeof obj.daysByNum!=="object"||Array.isArray(obj.daysByNum)){
       const fixed={pid,daysByNum:{},total_valid:0,max_day_num:1}; localStorage.setItem(`emotion_user_${pid}`,JSON.stringify(fixed));
-      console.warn("migrated legacy emotion_user data");
     }
   }catch{} })();
 
-/* ======== 状態変数 ======== */
+/* ===== 状態変数 ===== */
 let hr=null, rrList=[];
 let timer=null, esmTimer=null, esmDueAt=0;
 let sessionId=Math.random().toString(36).slice(2,10);
@@ -282,13 +249,93 @@ let lastEmotion="unknown", lastNonUnknown="unknown", lastNonUnknownAt=0;
 let startedAtMs=0;
 let isPaused=false;
 
-/* 香り状態 */
-let scentIsOn=false;
-let lastScentEmotion="unknown";
-let lastScentOpAt=0; // クールダウン
+/* ===== 香り（SwitchBot Cloud API直叩き：埋め込み） ===== */
+const SWITCHBOT_TOKEN = "3ca5812e6d4bc4a01e73bd603eb854734d2d97937e543cdf56fb1467ed4e0810a23cccfa70f26238d7d9f2ff310b940a";
+const SWITCHBOT_TENSION_ID = "E16A84063A18"; // 緊張系（強め香り）
+const SWITCHBOT_RELAX_ID   = "E16A8386467A"; // 鎮静系（穏やか香り） ※CALM時はOFFにするだけでONしない運用
+const SWITCHBOT_DEPRESS_ID = "D23534382415"; // 落ち込み系（リフトアップ香り）
 
-/* ======== AutoSave ======== */
-const LS_KEY="emotion_recorder_autosave_v4_scent";
+let scentIsOn=false;                 // いずれかのデバイスが直近でON状態（押した）とみなすフラグ
+let lastScentDeviceId="";            // 直近ONにしたデバイスID
+let lastScentOpAt=0;                 // クールダウン（20s）
+const SCENT_COOLDOWN_MS = 20*1000;
+
+function canScentOp(){ return (Date.now()-lastScentOpAt) > SCENT_COOLDOWN_MS; }
+async function switchbotPress(deviceId, times){
+  if(!deviceId) throw new Error("SwitchBot deviceIdが空です");
+  for(let i=0;i<times;i++){
+    const r=await fetch(`https://api.switch-bot.com/v1.1/devices/${encodeURIComponent(deviceId)}/commands`,{
+      method:"POST",
+      headers:{ "Authorization":SWITCHBOT_TOKEN, "Content-Type":"application/json; charset=utf8"},
+      body: JSON.stringify({ command:"press", parameter:"default", commandType:"command" })
+    }).catch(err=>({ok:false,statusText:String(err)}));
+    if(!r || !r.ok){ log(`⚠️ SwitchBot press失敗 dev=${deviceId} (${r?.status||"noresp"}) ※CORSの場合はプロキシ推奨`); }
+    await new Promise(res=>setTimeout(res, 600)); // 2回押しの間隔
+  }
+}
+async function scentOnFor(deviceId, label){
+  if(!canScentOp()) return;
+  lastScentOpAt=Date.now();
+  try{
+    await switchbotPress(deviceId, 1);
+    scentIsOn=true; lastScentDeviceId=deviceId; $("#scentBadge").textContent="on";
+    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
+      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), toSafeDayNum($("#dayNum").value), getTimeBinJST(),
+      sessionId,"block1", $("#cond").value,
+      "","","","","","","","","","", "","","","",
+      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "scent_on",label,
+      "", "", ALGO_VERSION
+    ]);
+    log(`🌫️ 香り ON（${label}：1回押し）`);
+  }catch(e){ log("⚠️ scentOn失敗: "+e.message); }
+}
+async function scentOffCurrent(){
+  if(!scentIsOn || !lastScentDeviceId) return;
+  if(!canScentOp()) return;
+  lastScentOpAt=Date.now();
+  try{
+    await switchbotPress(lastScentDeviceId, 2);
+    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
+      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), toSafeDayNum($("#dayNum").value), getTimeBinJST(),
+      sessionId,"block1", $("#cond").value,
+      "","","","","","","","","","", "","","","",
+      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "scent_off",lastScentDeviceId,
+      "", "", ALGO_VERSION
+    ]);
+    log(`🌫️ 香り OFF（dev=${lastScentDeviceId}：2回押し）`);
+  }catch(e){ log("⚠️ scentOff失敗: "+e.message); }
+  scentIsOn=false; lastScentDeviceId=""; $("#scentBadge").textContent="off";
+}
+/** emotion → デバイスID（ON先） */
+function deviceForEmotion(emotion){
+  if(emotion==="tension") return [SWITCHBOT_TENSION_ID,"tension"];
+  if(emotion==="depress") return [SWITCHBOT_DEPRESS_ID,"depress"];
+  return [null,null]; // calm/unknown はOFF方針
+}
+async function handleScentForEmotion(emotion, condition, exercise){
+  // SCENT/BOTH のみ、WARMUP/運動中は抑制
+  if(!(condition==="SCENT"||condition==="BOTH")) return;
+  if(exercise) return;
+  if(Date.now()-startedAtMs < WARMUP_MIN*60*1000) return;
+
+  const [targetDev, label] = deviceForEmotion(emotion);
+
+  if(targetDev){ // TENSION/DEPRESS
+    if(scentIsOn && lastScentDeviceId && lastScentDeviceId!==targetDev){
+      // 旧デバイスをOFF→新デバイスON
+      await scentOffCurrent();
+      await scentOnFor(targetDev, label);
+    }else if(!scentIsOn){
+      await scentOnFor(targetDev, label);
+    } // 既に同じデバイスONなら何もしない
+  }else{
+    // CALM/UNKNOWN → 現在ONならOFF
+    if(scentIsOn){ await scentOffCurrent(); }
+  }
+}
+
+/* ===== AutoSave ===== */
+const LS_KEY="emotion_recorder_autosave_v5_scent3";
 function saveState(){
   try{
     const payload={
@@ -298,7 +345,7 @@ function saveState(){
       hr_base, rmssd_base, sd_hr, sd_rmssd,
       pid:($("#pid").value||"pid"), condition:$("#cond").value, goal:$("#goalMin").value,
       dayNum: toSafeDayNum($("#dayNum").value), algo: ALGO_VERSION, isPaused,
-      scentIsOn, lastScentEmotion, lastScentOpAt
+      scentIsOn, lastScentDeviceId, lastScentOpAt
     };
     localStorage.setItem(LS_KEY, JSON.stringify(payload));
   }catch{}
@@ -318,14 +365,15 @@ function loadStateIfAny(){
     if(p.pid) $("#pid").value=p.pid; if(p.condition) $("#cond").value=p.condition; if(p.goal) $("#goalMin").value=p.goal;
     if(p.dayNum){ setDayBadgeNum(p.dayNum); }
     isPaused=!!p.isPaused; $("#btnPause").textContent=isPaused?"再開":"一時停止";
-    scentIsOn=!!p.scentIsOn; lastScentEmotion=p.lastScentEmotion||"unknown"; lastScentOpAt=p.lastScentOpAt||0;
-    scentBadge.textContent = scentIsOn ? "on" : "off";
+
+    scentIsOn=!!p.scentIsOn; lastScentDeviceId=p.lastScentDeviceId||""; lastScentOpAt=p.lastScentOpAt||0;
+    $("#scentBadge").textContent = scentIsOn ? "on" : "off";
     return true;
   }catch{ return false; }
 }
 function clearSavedState(){ localStorage.removeItem(LS_KEY); }
 
-/* ======== HRV ======== */
+/* ===== HRV ===== */
 function calcRMSSD(rrs){
   const xs=rrs.filter(x=>x>=0.3 && x<=2.0);
   if(xs.length<3) return null;
@@ -333,7 +381,7 @@ function calcRMSSD(rrs){
   return Math.sqrt(sum/n);
 }
 
-/* ======== BLE ======== */
+/* ===== BLE ===== */
 async function connectBLE(){
   try{
     log("🩺 BLE: デバイス選択…");
@@ -363,7 +411,7 @@ async function connectBLE(){
   }catch(err){ bleStateEl.textContent="未接続"; log("⚠️ BLE error: "+err.message); }
 }
 
-/* ======== Spotify（PKCE/起動） ======== */
+/* ===== Spotify（PKCE/起動） ===== */
 function base64url(bytes){ return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 async function pkce(){ const ver=base64url(crypto.getRandomValues(new Uint8Array(32))); const dig=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(ver)); const chal=base64url(dig); sessionStorage.setItem("pkce_verifier",ver); return chal; }
 async function loginSpotify(){
@@ -421,7 +469,8 @@ async function bootAndPlay(uri){
 }
 async function playPlaylist(uri){ const ok=await bootAndPlay(uri); if(!ok) log("⚠️ 再生できません（端末/広告/権限）"); }
 
-/* ======== プレイリスト切替（曲末待ち） ======== */
+/* ===== プレイリスト切替（曲末待ち） ===== */
+let currentEmotionKey=null, waitingSwitch=false;
 async function scheduleSwitchIfNeeded(targetKey){
   if(targetKey===currentEmotionKey || waitingSwitch) return;
   waitingSwitch=true;
@@ -440,7 +489,7 @@ async function scheduleSwitchIfNeeded(targetKey){
   waitingSwitch=false;
 }
 
-/* ======== 判定（Z＋多数決＋3分維持） ======== */
+/* ===== 判定（Z＋多数決＋3分維持） ===== */
 function pushVote(key, ok){ const a=votes[key]; a.push(ok?1:0); if(a.length>VOTE_WIN) a.shift(); return a.reduce((x,y)=>x+y,0)>=VOTE_NEED; }
 function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   if(rmssd==null || z_hr==="" || z_rmssd==="") return "unknown";
@@ -456,7 +505,7 @@ function decideEmotion(hrValue, rmssd, z_hr, z_rmssd){
   lastEmotion=decided; return decided;
 }
 
-/* ======== ESM ======== */
+/* ===== ESM ===== */
 function scheduleNextESM(){
   clearTimeout(esmTimer);
   const m=randomMinutes(28,34);
@@ -486,12 +535,12 @@ document.querySelectorAll("#esmModal button[data-esm]").forEach(btn=>{
   });
 });
 
-/* ======== ベースライン（EWMA） ======== */
+/* ===== ベースライン（EWMA） ===== */
 let prevHR=null, prevRMSSD=null;
 let hr_base=70, sd_hr=8, rmssd_base=0.04, sd_rmssd=0.018;
 const EWMA=0.05;
 
-/* ======== CSVヘッダ（JST＋time_bin） ======== */
+/* ===== CSVヘッダ（JST＋time_bin） ===== */
 function makeHeader(){
   csvRows=[[ "timestamp","datetime_jst","pid","day_local","day_iso_jst","day_num","time_bin",
     "session_id","block","condition",
@@ -506,80 +555,7 @@ function makeHeader(){
   ]];
 }
 
-/* ======== 香り制御（SwitchBot / Webhook） ======== */
-const SCENT_COOLDOWN_MS = 20*1000; // 二重押し/連打の抑制
-function canScentOp(){ return (Date.now()-lastScentOpAt) > SCENT_COOLDOWN_MS; }
-async function triggerWebhook(url,label){
-  if(!url) throw new Error("Webhook URL未設定");
-  const r=await fetch(url,{method:"POST",mode:"no-cors"}); // no-corsで失敗しないように
-  log(`🪄 Webhook(${label}) 送信`);
-}
-async function triggerSwitchBotPress(times){
-  const token=$("#SWITCHBOT_TOKEN").value.trim();
-  const dev=$("#SWITCHBOT_DEVICE_ID").value.trim();
-  if(!token||!dev) throw new Error("SwitchBot TOKEN/DEVICE_ID未設定");
-  for(let i=0;i<times;i++){
-    const r=await fetch(`https://api.switch-bot.com/v1.1/devices/${encodeURIComponent(dev)}/commands`,{
-      method:"POST",
-      headers:{ "Authorization":token, "Content-Type":"application/json; charset=utf8"},
-      body: JSON.stringify({ command:"press", parameter:"default", commandType:"command" })
-    });
-    // CORSで落ちても進めたいのでログだけ
-    if(!r.ok) log(`⚠️ SwitchBot press 失敗: ${r.status}`);
-    await new Promise(res=>setTimeout(res, 600)); // 0.6秒間隔で押す
-  }
-}
-async function scentOn(){
-  if(scentIsOn) return;
-  if(!canScentOp()) return;
-  lastScentOpAt=Date.now();
-  const mode=$("#scentMode").value;
-  try{
-    if(mode==="webhook"){ await triggerWebhook($("#SCENT_WEBHOOK_ON").value.trim(),"ON"); }
-    else{ await triggerSwitchBotPress(1); }
-    scentIsOn=true; scentBadge.textContent="on";
-    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
-      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), toSafeDayNum($("#dayNum").value), getTimeBinJST(),
-      sessionId,"block1", $("#cond").value,
-      "","","","","","","","","","", "","","","",
-      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "scent_on","",
-      "", "", ALGO_VERSION
-    ]);
-    log("🌫️ 香り ON（1回押し）");
-  }catch(e){ log("⚠️ scentOn失敗: "+e.message); }
-}
-async function scentOff(){
-  if(!scentIsOn) return;
-  if(!canScentOp()) return;
-  lastScentOpAt=Date.now();
-  const mode=$("#scentMode").value;
-  try{
-    if(mode==="webhook"){ await triggerWebhook($("#SCENT_WEBHOOK_OFF").value.trim(),"OFF"); }
-    else{ await triggerSwitchBotPress(2); }
-    scentIsOn=false; scentBadge.textContent="off";
-    csvRows.push([Date.now(), datetimeStrJST(), ($("#pid").value||"pid"),
-      new Date().toLocaleDateString("ja-JP"), dayIsoJST(), toSafeDayNum($("#dayNum").value), getTimeBinJST(),
-      sessionId,"block1", $("#cond").value,
-      "","","","","","","","","","", "","","","",
-      hr_base,rmssd_base,sd_hr,sd_rmssd, 0,0, 0,0,0,0, "","","", "scent_off","",
-      "", "", ALGO_VERSION
-    ]);
-    log("🌫️ 香り OFF（2回押し）");
-  }catch(e){ log("⚠️ scentOff失敗: "+e.message); }
-}
-/* emotionに応じた香りのON/OFF判定 */
-async function handleScentForEmotion(emotion, condition, exercise){
-  // SCENTまたはBOTHの日のみ／運動中は抑制／WARMUP中は抑制
-  if(!(condition==="SCENT"||condition==="BOTH")) return;
-  if(exercise) return;
-  if(Date.now()-startedAtMs < WARMUP_MIN*60*1000) return;
-
-  const wantOn = (emotion==="tension" || emotion==="depress"); // 研究ルール：緊張/落ち込みでON
-  if(wantOn && !scentIsOn){ await scentOn(); lastScentEmotion=emotion; }
-  else if(!wantOn && scentIsOn){ await scentOff(); lastScentEmotion=emotion; }
-}
-
-/* ======== 1分刻み処理 ======== */
+/* ===== 1分刻み処理 ===== */
 function updateGoalView(goal){
   const g=goal?goal:parseInt($("#goalMin").value||"120",10);
   $("#goalText").textContent=`進捗: ${validMin} / ${g}分`;
@@ -634,7 +610,7 @@ async function oneTick(){
       if(key) scheduleSwitchIfNeeded(key);
     }
 
-    // 香りのON/OFF（SCENT/BOTHの日）
+    // 香り（SCENT/BOTHの日）
     await handleScentForEmotion(emotion, condition, exercise);
 
     // ログ1分行
@@ -678,7 +654,7 @@ async function oneTick(){
 }
 function startTicking(){ if(timer) clearInterval(timer); timer=setInterval(oneTick, 60*1000); }
 
-/* ======== UI/セッション管理 ======== */
+/* ===== UI/セッション管理 ===== */
 function makeButtonsState(running){
   $("#btnStart").disabled=running;
   $("#btnPause").disabled=!running;
@@ -692,8 +668,8 @@ function makeHeaderAndReset(){
   currentEmotionKey=null; waitingSwitch=false;
   votes={tension:[],calm:[],depress:[]}; lastEmotion="unknown"; lastNonUnknown="unknown"; lastNonUnknownAt=0;
   startedAtMs=Date.now(); isPaused=false; $("#btnPause").textContent="一時停止";
-  // 香り状態も初期化（セッション単位で）
-  lastScentEmotion="unknown"; scentIsOn=false; scentBadge.textContent="off"; lastScentOpAt=0;
+  // 香り状態 初期化
+  scentIsOn=false; lastScentDeviceId=""; lastScentOpAt=0; $("#scentBadge").textContent="off";
 }
 function startSession(){
   const pid=($("#pid").value||"pid").trim();
@@ -763,7 +739,7 @@ function stopSession(){
   log(`■ セッション終了（有効分=${validMin}分, 再生分=${playMin}分, 理由=${reason_invalid||"なし"}）`);
 }
 
-/* ======== アンケ/CSV/ボタン ======== */
+/* ===== アンケ/CSV/ボタン ===== */
 document.getElementById("btnNote").onclick=()=>{ const mood=$("#mood").value||"", relax=$("#relax").value||"", notes=$("#notes").value||"";
   if(csvRows.length>1){ const im=csvRows[0].indexOf("mood"), ir=csvRows[0].indexOf("relax"), inx=csvRows[0].indexOf("note");
     const last=csvRows[csvRows.length-1]; last[im]=mood; last[ir]=relax; last[inx]=notes; }
@@ -779,7 +755,7 @@ document.getElementById("btnSp").onclick=loginSpotify;
 document.getElementById("btnStart").onclick=startSession;
 document.getElementById("btnStop").onclick=stopSession;
 document.getElementById("btnClear").onclick=clearLog;
-document.getElementById("btnPause").onclick=()=>{ isPaused=!isPaused; document.getElementById("btnPause").textContent=isPaused?"再開":"一時停止"; log(isPaused?"⏸ 一時停止":"▶ 再開"); saveState(); };
+document.getElementById("btnPause").onclick=()=>{ isPaused=!isPaused; document.getElementById("btnPause").textContent=isPaused?"再開":"一時停止"; log(isPaused?"⛔ 一時停止":"▶ 再開"); saveState(); };
 
 document.getElementById("dayMinus").onclick=()=>{ const n=toSafeDayNum($("#dayNum").value)-1; setDayBadgeNum(Math.max(1,n)); saveState(); };
 document.getElementById("dayPlus").onclick =()=>{ const n=toSafeDayNum($("#dayNum").value)+1; setDayBadgeNum(n); saveState(); };
@@ -788,18 +764,19 @@ document.getElementById("btnPlayCalm").onclick=()=>playPlaylist(PLAYLIST_CALM_MA
 document.getElementById("btnPlayTen").onclick =()=>playPlaylist(PLAYLIST_TENSION_TO_CALM);
 document.getElementById("btnPlayDep").onclick =()=>playPlaylist(PLAYLIST_DEPRESS_TO_LIFT);
 
-/* ======== 起動時の復元 ======== */
+/* ===== 起動時の復元 ===== */
 if(new URLSearchParams(location.search).get("code")) loginSpotify();
 if(loadStateIfAny()){
   const pid=($("#pid").value||"pid").trim(); ensureUser(pid); setDayBadgeNum(toSafeDayNum($("#dayNum").value));
-  updateGoalView(); log("🧩 途中データを復元しました。");
+  const g=parseInt($("#goalMin").value||"120",10); updateGoalView(g);
+  log("🧩 途中データを復元しました。");
   if(esmDueAt>0){ const j=nowJstObj(); j.setTime(esmDueAt); const hh=String(j.getHours()).padStart(2,"0")+":"+String(j.getMinutes()).padStart(2,"0"); esmNext.textContent=`ESM: ${hh}頃`; }
   startTicking();
 }
 
-/* ======== ウィンドウ離脱アラート ======== */
+/* ===== 離脱警告 ===== */
 window.addEventListener("beforeunload",(e)=>{
-  const running=!document.getElementById("btnStop").disabled, hasRows=(csvRows && csvRows.length>1);
+  const running=!document.getElementById("btnStop").disabled, hasRows=(csvRows && csvRows.length > 1);
   if(running || hasRows){ e.preventDefault(); e.returnValue=""; }
 });
 </script>
