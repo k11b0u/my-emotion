@@ -191,7 +191,7 @@ const ZTH={T_RMSSD_STRONG:-0.60,T_RMSSD_SOFT:-0.30,T_HR_HELP:0.20,C_RMSSD_STRONG
 const VOTE_WIN=5,VOTE_NEED=3,SEG_MIN_MIN=3,WARMUP_MIN=3,SD_HR_FLOOR=3,SD_RMSSD_FLOOR=0.015;
 
 /* ===== Spotify設定（PKCE） ===== */
-const SPOTIFY_CLIENT_ID="7838a0cf003644ae8b5f3f75b9eb534e";
+const SPOTIFY_CLIENT_ID="REDACTED";//公開版では伏せる
 const REDIRECT_URI=location.origin+location.pathname;
 const SCOPES=["user-read-playback-state","user-modify-playback-state","playlist-read-private","playlist-read-collaborative","streaming"].join(" ");
 const PLAYLIST_TENSION_TO_CALM="spotify:playlist:6lEP2HI9ecRpSoHQNRTok7";
@@ -301,9 +301,9 @@ async function scheduleSwitchIfNeeded(targetKey){
 
 /* クライアント側の冗長マップ（サーバ環境変数と合わせておくと安心） */
 const CLIENT_DEVICE_MAP = {
-  tension: "E16A84063A18",
-  relax:   "E16A8386467A",
-  depress: "D23534382415"
+  tension: "REDACTED",
+  relax:   "REDACTED",
+  depress: "REDACTED"
 };
 
 function canScentOp(){ return (Date.now()-lastScentOpAt) > SCENT_COOLDOWN_MS; }
@@ -615,3 +615,4 @@ if(new URLSearchParams(location.search).get("code")) loginSpotify();
 </script>
 </body>
 </html>
+
